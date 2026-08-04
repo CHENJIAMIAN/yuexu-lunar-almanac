@@ -1,12 +1,13 @@
 [CmdletBinding()]
 param()
 
-$ErrorActionPreference = 'SilentlyContinue'
-$taskName = 'LunarCalendarDailyWallpaper'
-$taskPaths = @('\Codex\', '\')
-foreach ($taskPath in $taskPaths) {
-    Unregister-ScheduledTask -TaskPath $taskPath -TaskName $taskName -Confirm:$false
+$ErrorActionPreference = 'Stop'
+$installRoot = Join-Path $env:LOCALAPPDATA 'Programs\YueXu'
+$uninstaller = Join-Path $installRoot 'Uninstall-YueXu.ps1'
+if (-not (Test-Path -LiteralPath $uninstaller)) {
+    Write-Output '未找到已安装的月序。'
+    exit 0
 }
-$shortcut = Join-Path ([Environment]::GetFolderPath('Desktop')) '月序日历.lnk'
-if (Test-Path $shortcut) { Remove-Item -LiteralPath $shortcut -Force }
-Write-Output "已移除任务和快捷方式：\Codex\$taskName"
+$pwsh = (Get-Command pwsh.exe -ErrorAction SilentlyContinue).Source
+if (-not $pwsh) { $pwsh = (Get-Command powershell.exe -ErrorAction Stop).Source }
+& $pwsh -NoProfile -ExecutionPolicy Bypass -File $uninstaller

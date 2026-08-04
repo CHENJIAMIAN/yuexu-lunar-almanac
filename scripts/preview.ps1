@@ -6,6 +6,10 @@ param(
 )
 
 $ProjectRoot = Split-Path -Parent $PSScriptRoot
-$index = Join-Path $ProjectRoot 'index.html'
-$url = 'file:///' + ($index -replace '\\', '/') + "?year=$Year&theme=$Theme"
-Start-Process $url
+$Binary = Join-Path $ProjectRoot 'target\debug\LunarCalendar.exe'
+if (-not (Test-Path -LiteralPath $Binary)) {
+    Push-Location $ProjectRoot
+    try { cargo build --bin LunarCalendar } finally { Pop-Location }
+}
+& $Binary '--preview' "--year=$Year" "--theme=$Theme"
+if ($LASTEXITCODE -ne 0) { throw "预览程序退出码：$LASTEXITCODE" }

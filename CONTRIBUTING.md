@@ -5,12 +5,11 @@
 ## 本地验证
 
 ```powershell
-go test ./...
-go build -o LunarCalendar-debug.exe .
-.\LunarCalendar-debug.exe --update --width 1920 --height 1080 --set-wallpaper=false
+cargo test --locked
+cargo run -- --update --width 1920 --height 1080 --set-wallpaper=false
 ```
 
-涉及视觉改动时，请分别检查深色与浅色主题，以及 1920×1080 和 3840×2160 输出。涉及农历逻辑时，请覆盖春节、闰月和跨公历年的日期。
+涉及视觉改动时，请分别检查深色与浅色主题，以及 1920×1080 和 3840×2160 输出。涉及农历逻辑时，请覆盖春节、闰月和跨公历年的日期。壁纸渲染必须保持浏览器无依赖。
 
 ## 提交约定
 

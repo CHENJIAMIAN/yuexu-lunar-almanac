@@ -17,11 +17,15 @@ New-Item -ItemType Directory -Force -Path $StageRoot, $ReleaseRoot | Out-Null
 
 Push-Location $ProjectRoot
 try {
-    go test ./...
-    go build -trimpath -ldflags "-s -w -H=windowsgui -X main.version=$Version" -o (Join-Path $StageRoot 'LunarCalendar.exe') .
+    $env:YUEXU_VERSION = $Version
+    cargo test --locked
+    cargo build --release --locked --bin LunarCalendar
 } finally {
+    Remove-Item Env:YUEXU_VERSION -ErrorAction SilentlyContinue
     Pop-Location
 }
+
+Copy-Item -LiteralPath (Join-Path $ProjectRoot 'target\release\LunarCalendar.exe') -Destination (Join-Path $StageRoot 'LunarCalendar.exe') -Force
 
 $files = @(
     @{ Source = 'installer\Install-YueXu.ps1'; Target = 'Install-YueXu.ps1' },
@@ -41,8 +45,9 @@ $manifest = [ordered]@{
     name = '月序 / Lunar Almanac'
     version = $Version
     platform = 'windows-x64'
-    minimumWindows = 'Windows 10 with Microsoft Edge or Google Chrome'
+    minimumWindows = 'Windows 10 x64; no browser required for wallpaper updates'
     binary = 'LunarCalendar.exe'
+    renderer = 'Rust + resvg + tiny-skia'
     sha256 = $binaryHash
     generatedAt = (Get-Date).ToUniversalTime().ToString('o')
 }

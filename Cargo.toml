@@ -1,0 +1,26 @@
+[package]
+name = "yuexu-lunar-almanac"
+version = "0.2.0"
+edition = "2024"
+description = "月序：零常驻的 Windows 农历桌面日历"
+license = "MIT"
+repository = "https://github.com/CHENJIAMIAN/yuexu-lunar-almanac"
+
+[[bin]]
+name = "LunarCalendar"
+path = "native/main.rs"
+
+[dependencies]
+anyhow = "1.0.102"
+chrono = { version = "0.4.44", default-features = false, features = ["clock", "std"] }
+lunar_rust = "1.0.1"
+resvg = { version = "0.48.1", default-features = false, features = ["memmap-fonts", "system-fonts", "text"] }
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = "1.0.149"
+url = "2.5.8"
+
+[profile.release]
+codegen-units = 1
+lto = "thin"
+panic = "abort"
+strip = "symbols"

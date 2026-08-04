@@ -4,7 +4,7 @@
   <img src="assets/yuexu-icon.png" width="96" alt="月序图标">
 </p>
 
-> 一张每天自动更新的全年农历桌面日历。它只在更新时生成静态 PNG，完成后没有常驻浏览器、WebView 或网络连接。
+> 一张每天自动更新的全年农历桌面日历。更新时由 Rust 进程直接生成静态 PNG，完成后立即退出，没有常驻服务、浏览器、WebView 或网络连接。
 
 ![深色主题预览](assets/preview-dark.png)
 
@@ -13,9 +13,11 @@
 - Windows 10/11 x64
 - 全年 12 个月、农历、闰月、当天高亮
 - 深色与浅色主题，默认深色，主题会被本地记住
-- 登录和每天 `00:01` 自动更新
+- 登录和每天 `00:01` 自动更新；错过零点会在系统恢复后补跑
 - 用户级安装，不要求管理员权限
-- 运行时只使用系统已有 Microsoft Edge 或 Google Chrome 进行一次无窗口渲染
+- 常规更新使用 Rust + `lunar_rust` + `resvg` + `tiny-skia`，不依赖 Chrome、Edge 或 WebView
+
+日历的手动预览仍会按用户默认浏览器打开一个本地 HTML 设置页，只有用户主动点开快捷方式时才会发生；计划任务和每日壁纸更新不会启动浏览器。
 
 ## 安装
 
@@ -37,11 +39,23 @@ Set-ExecutionPolicy -Scope Process Bypass
 # 切换并记住浅色主题
 .\LunarCalendar.exe --update --theme light
 
+# 生成图片但不设置为壁纸
+.\LunarCalendar.exe --update --width 1920 --height 1080 --set-wallpaper=false
+
 # 打开预览与设置
 .\LunarCalendar.exe --preview
 ```
 
 生成的壁纸与偏好只写入 `%LOCALAPPDATA%\YueXu`。不读取日历账户、不上传数据、不需要 API Key。
+
+## 架构
+
+| 层 | 实现 |
+| --- | --- |
+| 日历与农历 | Rust，`lunar_rust` 离线历法 |
+| 版式与 PNG | Rust 生成 SVG，`resvg` / `tiny-skia` 进程内栅格化 |
+| Windows 集成 | 原生 Win32 `SystemParametersInfoW` 设置壁纸、Windows 任务计划程序定时触发 |
+| 预览设置 | 仅按需打开的本地 HTML 页面 |
 
 ## 面向商业发行
 
@@ -56,12 +70,11 @@ Set-ExecutionPolicy -Scope Process Bypass
 ## 开发
 
 ```powershell
-go test ./...
-go build -o LunarCalendar-debug.exe .
-.\LunarCalendar-debug.exe --update --width 1920 --height 1080 --set-wallpaper=false
+cargo test --locked
+cargo run -- --update --width 1920 --height 1080 --set-wallpaper=false
 ```
 
-前端源文件在 `index.html` 和 `src/` 中，Go 启动器会在构建时通过 `go:embed` 打包它们。
+Rust 运行时代码在 `native/`。`index.html` 和 `src/` 仅用于用户手动打开的预览页，不参与壁纸生成。
 
 ## 开源
 
