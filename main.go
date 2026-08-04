@@ -79,19 +79,19 @@ func main() {
 	}
 	if flag.NArg() == 1 && strings.HasPrefix(strings.ToLower(flag.Arg(0)), "yuexu://") {
 		if err := handleProtocol(flag.Arg(0), *quiet); err != nil {
-			reportError(err)
+			exitWithError(err)
 		}
 		return
 	}
 
 	resolvedTheme, err := resolveTheme(*theme)
 	if err != nil {
-		reportError(err)
+		exitWithError(err)
 		return
 	}
 	if *preview {
 		if err := openPreview(*year, resolvedTheme, *today); err != nil {
-			reportError(err)
+			exitWithError(err)
 			return
 		}
 		return
@@ -110,7 +110,7 @@ func main() {
 			Quiet:        *quiet,
 		})
 		if err != nil {
-			reportError(err)
+			exitWithError(err)
 		}
 		return
 	}
@@ -232,6 +232,11 @@ func usage() {
 
 func reportError(err error) {
 	fmt.Fprintln(os.Stderr, "月序更新失败：", err)
+}
+
+func exitWithError(err error) {
+	reportError(err)
+	os.Exit(1)
 }
 
 func renderWallpaper(options renderOptions) error {
