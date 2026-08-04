@@ -2,6 +2,7 @@
 /dist/
 /release/
 /target/
+/verification/
 *.exe
 *.capture.png
 .codegraph/

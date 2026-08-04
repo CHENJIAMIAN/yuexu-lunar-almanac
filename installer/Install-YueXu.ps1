@@ -86,11 +86,9 @@ $programs = Join-Path ([Environment]::GetFolderPath('StartMenu')) 'Programs\月�
 New-Item -ItemType Directory -Force -Path $programs | Out-Null
 New-YueXuShortcut -Path (Join-Path $programs '月序日历.lnk') -Target $Binary -Arguments '--preview' -IconPath $Icon
 
-$protocolKey = 'HKCU:\Software\Classes\yuexu'
-New-Item -Path "$protocolKey\shell\open\command" -Force | Out-Null
-Set-Item -Path $protocolKey -Value 'URL:月序 Protocol'
-New-ItemProperty -Path $protocolKey -Name 'URL Protocol' -Value '' -PropertyType String -Force | Out-Null
-Set-Item -Path "$protocolKey\shell\open\command" -Value "`"$Binary`" `"%1`""
+# 0.4.0 起设置窗口完全原生化，升级时清理旧版网页协议注册。
+Remove-Item -LiteralPath 'HKCU:\Software\Classes\yuexu' -Recurse -Force -ErrorAction SilentlyContinue
+Remove-Item -LiteralPath (Join-Path $env:LOCALAPPDATA 'YueXu\preview') -Recurse -Force -ErrorAction SilentlyContinue
 
 $pwsh = (Get-Command pwsh.exe -ErrorAction SilentlyContinue).Source
 if (-not $pwsh) { $pwsh = (Get-Command powershell.exe -ErrorAction Stop).Source }

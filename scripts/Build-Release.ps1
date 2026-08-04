@@ -32,13 +32,36 @@ $files = @(
     @{ Source = 'installer\Uninstall-YueXu.ps1'; Target = 'Uninstall-YueXu.ps1' },
     @{ Source = 'assets\YueXu.ico'; Target = 'YueXu.ico' },
     @{ Source = 'README.md'; Target = 'README.md' },
+    @{ Source = 'CONTRIBUTING.md'; Target = 'CONTRIBUTING.md' },
     @{ Source = 'LICENSE'; Target = 'LICENSE' },
     @{ Source = 'CHANGELOG.md'; Target = 'CHANGELOG.md' },
     @{ Source = 'themes\moonlit-ink.json'; Target = 'custom-theme.example.json' },
+    @{ Source = 'themes\moonlit-ink.json'; Target = 'themes\moonlit-ink.json' },
+    @{ Source = 'assets\yuexu-icon.png'; Target = 'assets\yuexu-icon.png' },
+    @{ Source = 'assets\preview-dark.png'; Target = 'assets\preview-dark.png' },
+    @{ Source = 'assets\preview-light.png'; Target = 'assets\preview-light.png' },
+    @{ Source = 'docs\发布清单.md'; Target = 'docs\发布清单.md' },
+    @{ Source = 'docs\商业化方案.md'; Target = 'docs\商业化方案.md' },
     @{ Source = 'VERSION'; Target = 'VERSION' }
 )
 foreach ($file in $files) {
-    Copy-Item -LiteralPath (Join-Path $ProjectRoot $file.Source) -Destination (Join-Path $StageRoot $file.Target) -Force
+    $destination = Join-Path $StageRoot $file.Target
+    New-Item -ItemType Directory -Force -Path (Split-Path -Parent $destination) | Out-Null
+    Copy-Item -LiteralPath (Join-Path $ProjectRoot $file.Source) -Destination $destination -Force
+}
+
+$requiredFiles = @(
+    'LunarCalendar.exe',
+    'Install-YueXu.ps1',
+    'Uninstall-YueXu.ps1',
+    'assets\preview-dark.png',
+    'assets\preview-light.png',
+    'themes\moonlit-ink.json'
+)
+foreach ($file in $requiredFiles) {
+    if (-not (Test-Path -LiteralPath (Join-Path $StageRoot $file))) {
+        throw "发行包缺少必要文件：$file"
+    }
 }
 
 $binaryHash = (Get-FileHash -LiteralPath (Join-Path $StageRoot 'LunarCalendar.exe') -Algorithm SHA256).Hash
@@ -48,7 +71,7 @@ $manifest = [ordered]@{
     platform = 'windows-x64'
     minimumWindows = 'Windows 10 x64; no browser required for wallpaper updates'
     binary = 'LunarCalendar.exe'
-    renderer = 'Rust + resvg + tiny-skia'
+    renderer = 'Rust + resvg + tiny-skia + Win32 native settings'
     sha256 = $binaryHash
     generatedAt = (Get-Date).ToUniversalTime().ToString('o')
 }

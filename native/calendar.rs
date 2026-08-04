@@ -510,6 +510,14 @@ mod tests {
     }
 
     #[test]
+    fn labels_a_leap_lunar_month() {
+        assert_eq!(
+            lunar_short_label(NaiveDate::from_ymd_opt(2023, 3, 22).unwrap()),
+            "闰二月"
+        );
+    }
+
+    #[test]
     fn builds_all_twelve_months_without_a_hero_column() {
         let svg = wallpaper_svg(
             1920,

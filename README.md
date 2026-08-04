@@ -4,9 +4,11 @@
   <img src="assets/yuexu-icon.png" width="96" alt="月序图标">
 </p>
 
-> 一张每天自动更新的全年农历桌面日历。更新时由 Rust 进程直接生成静态 PNG，完成后立即退出，没有常驻服务、浏览器、WebView 或网络连接。
+> 一张每天自动更新的全年农历桌面日历。更新与设置都由 Rust 原生程序完成，没有常驻服务、浏览器、WebView 或网络连接。
 
 ![深色主题预览](assets/preview-dark.png)
+
+[查看浅色主题预览](assets/preview-light.png)
 
 ## 产品状态
 
@@ -14,41 +16,47 @@
 - 全年 12 个月、农历、闰月、当天高亮
 - 深色、浅色与可导入的自定义主题，默认深色，主题会被本地记住
 - 登录和每天 `00:01` 自动更新；错过零点会在系统恢复后补跑
+- 默认按当前主屏的物理分辨率生成壁纸，避免不必要的 4K 渲染、缩放和裁切
 - 用户级安装，不要求管理员权限
 - 常规更新使用 Rust + `lunar_rust` + `resvg` + `tiny-skia`，不依赖 Chrome、Edge 或 WebView
+- 原生 Windows 设置窗口：日历预览、主题、配色、导入和导出都在同一个桌面窗口完成
 
-日历的手动预览仍会按用户默认浏览器打开一个本地 HTML 设置页，只有用户主动点开快捷方式时才会发生；计划任务和每日壁纸更新不会启动浏览器。
+双击桌面或开始菜单的“月序日历”会打开原生设置窗口。它只在用户主动打开时运行；计划任务和每日壁纸更新不会创建任何窗口。
 
 ## 安装
 
 从 Release 下载 `YueXu-<版本>-windows-x64.zip`，解压后在 PowerShell 运行：
+
+当前开源发行包未进行代码签名。下载后请先核对 Release 附带的 SHA256 校验文件；首次运行时如出现 Windows SmartScreen 提示，请按所在组织的安全策略处理。
 
 ```powershell
 Set-ExecutionPolicy -Scope Process Bypass
 .\Install-YueXu.ps1
 ```
 
-安装完成后，桌面和开始菜单会出现“月序日历”。打开它可以预览全年日历并切换主题；点击第三个颜色样本可导入自定义主题 JSON。升级安装默认保留已有主题，首次安装回落到深色。
+安装完成后，桌面和开始菜单会出现“月序日历”。打开它可以预览全年日历、切换深浅主题、编辑 11 项颜色、导入/导出主题，并通过“应用到桌面”立即生效。升级安装默认保留已有主题，首次安装回落到深色。
 
 ## 命令行
 
 ```powershell
 # 立即更新，使用记住的主题
-.\LunarCalendar.exe --update --quiet
+Start-Process -FilePath .\LunarCalendar.exe -ArgumentList @('--update', '--quiet') -Wait
 
 # 切换并记住浅色主题
-.\LunarCalendar.exe --update --theme light
+Start-Process -FilePath .\LunarCalendar.exe -ArgumentList @('--update', '--theme', 'light') -Wait
 
 # 导出当前主题作为 JSON 模板，编辑后导入并应用
-.\LunarCalendar.exe --export-theme .\my-theme.json
-.\LunarCalendar.exe --theme-file .\my-theme.json
+Start-Process -FilePath .\LunarCalendar.exe -ArgumentList @('--export-theme', '.\my-theme.json') -Wait
+Start-Process -FilePath .\LunarCalendar.exe -ArgumentList @('--theme-file', '.\my-theme.json') -Wait
 
 # 生成图片但不设置为壁纸
-.\LunarCalendar.exe --update --width 1920 --height 1080 --set-wallpaper=false
+Start-Process -FilePath .\LunarCalendar.exe -ArgumentList @('--update', '--width', '1920', '--height', '1080', '--set-wallpaper=false') -Wait
 
 # 打开预览与设置
-.\LunarCalendar.exe --preview
+Start-Process -FilePath .\LunarCalendar.exe -ArgumentList @('--preview')
 ```
+
+`LunarCalendar.exe` 是 GUI 子系统程序。手工打开设置窗口无需等待；在脚本里调用更新、导入或导出时应保留 `-Wait`，以确保下一步在操作完成后再执行。
 
 生成的壁纸与偏好只写入 `%LOCALAPPDATA%\YueXu`。不读取日历账户、不上传数据、不需要 API Key。
 
@@ -61,7 +69,7 @@ Set-ExecutionPolicy -Scope Process Bypass
 | 日历与农历 | Rust，`lunar_rust` 离线历法 |
 | 版式与 PNG | Rust 生成 SVG，`resvg` / `tiny-skia` 进程内栅格化 |
 | Windows 集成 | 原生 Win32 `SystemParametersInfoW` 设置壁纸、Windows 任务计划程序定时触发 |
-| 预览设置 | 仅按需打开的本地 HTML 页面 |
+| 预览设置 | 仅按需打开的 Win32 原生设置窗口，使用与壁纸相同的渲染器 |
 
 ## 面向商业发行
 
@@ -80,7 +88,7 @@ cargo test --locked
 cargo run -- --update --width 1920 --height 1080 --set-wallpaper=false
 ```
 
-Rust 运行时代码在 `native/`。`index.html` 和 `src/` 仅用于用户手动打开的预览页，不参与壁纸生成。
+Rust 运行时代码在 `native/`；其中 `native/ui.rs` 是原生设置窗口，`native/calendar.rs` 同时驱动窗口预览和实际壁纸生成。
 
 ## 开源
 

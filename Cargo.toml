@@ -1,6 +1,6 @@
 [package]
 name = "yuexu-lunar-almanac"
-version = "0.3.0"
+version = "0.4.0"
 edition = "2024"
 description = "月序：零常驻的 Windows 农历桌面日历"
 license = "MIT"
@@ -17,7 +17,6 @@ lunar_rust = "1.0.1"
 resvg = { version = "0.48.1", default-features = false, features = ["memmap-fonts", "system-fonts", "text"] }
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.149"
-url = "2.5.8"
 
 [profile.release]
 codegen-units = 1

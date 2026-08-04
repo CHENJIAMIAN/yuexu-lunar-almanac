@@ -1,6 +1,7 @@
 #![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
 
 mod calendar;
+mod ui;
 
 use std::{
     env,
@@ -38,7 +39,6 @@ struct CliOptions {
     today: NaiveDate,
     output: Option<PathBuf>,
     set_wallpaper: bool,
-    protocol: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Default)]
@@ -67,10 +67,6 @@ fn run() -> Result<()> {
         return Ok(());
     }
 
-    if let Some(protocol) = options.protocol {
-        return handle_protocol(&protocol, options.quiet);
-    }
-
     let theme = resolve_theme(
         options.requested_theme.as_deref(),
         options.theme_file.as_deref(),
@@ -80,7 +76,12 @@ fn run() -> Result<()> {
         return Ok(());
     }
     if options.preview {
-        return open_preview(options.year, theme, options.today);
+        return ui::open_settings(
+            options.year,
+            theme,
+            options.today,
+            load_settings()?.custom_theme,
+        );
     }
 
     if options.update {
@@ -102,13 +103,14 @@ fn run() -> Result<()> {
 
 fn parse_cli() -> Result<CliOptions> {
     let now = Local::now().date_naive();
+    let (desktop_width, desktop_height) = desktop_resolution();
     let mut options = CliOptions {
         update: false,
         preview: false,
         quiet: false,
         show_version: false,
-        width: DEFAULT_WIDTH,
-        height: DEFAULT_HEIGHT,
+        width: desktop_width,
+        height: desktop_height,
         year: now.year(),
         requested_theme: None,
         theme_file: None,
@@ -116,7 +118,6 @@ fn parse_cli() -> Result<CliOptions> {
         today: now,
         output: None,
         set_wallpaper: true,
-        protocol: None,
     };
     let args = env::args().skip(1).collect::<Vec<_>>();
     if args.is_empty() {
@@ -179,8 +180,6 @@ fn parse_cli() -> Result<CliOptions> {
                 "--set-wallpaper" => options.set_wallpaper = parse_bool(value)?,
                 _ => unreachable!(),
             }
-        } else if argument.to_ascii_lowercase().starts_with("yuexu://") && args.len() == 1 {
-            options.protocol = Some(argument.to_owned());
         } else {
             bail!("未知参数：{argument}");
         }
@@ -230,6 +229,29 @@ fn parse_date(value: &str) -> Result<NaiveDate> {
     NaiveDate::parse_from_str(value, "%Y-%m-%d").context("当天日期格式应为 YYYY-MM-DD")
 }
 
+#[cfg(windows)]
+fn desktop_resolution() -> (u32, u32) {
+    unsafe {
+        SetProcessDPIAware();
+    }
+    sanitize_desktop_resolution(unsafe { GetSystemMetrics(0) }, unsafe {
+        GetSystemMetrics(1)
+    })
+}
+
+#[cfg(not(windows))]
+fn desktop_resolution() -> (u32, u32) {
+    (DEFAULT_WIDTH, DEFAULT_HEIGHT)
+}
+
+fn sanitize_desktop_resolution(width: i32, height: i32) -> (u32, u32) {
+    if width >= 800 && height >= 600 {
+        (width as u32, height as u32)
+    } else {
+        (DEFAULT_WIDTH, DEFAULT_HEIGHT)
+    }
+}
+
 fn resolve_theme(requested: Option<&str>, theme_file: Option<&Path>) -> Result<Theme> {
     let settings = load_settings()?;
     if let Some(path) = theme_file {
@@ -264,53 +286,14 @@ fn resolve_theme(requested: Option<&str>, theme_file: Option<&Path>) -> Result<T
     Ok(Theme::parse(&settings.theme).unwrap_or(Theme::Dark))
 }
 
-fn handle_protocol(raw_url: &str, quiet: bool) -> Result<()> {
-    let url = url::Url::parse(raw_url).context("无效的月序链接")?;
-    if url.scheme() != "yuexu" || url.host_str() != Some("theme") {
-        bail!("不支持的月序操作");
-    }
-    let settings = load_settings()?;
-    let theme = match url.path() {
-        "/import" => {
-            let data = url
-                .query_pairs()
-                .find_map(|(name, value)| (name == "data").then_some(value.into_owned()))
-                .context("自定义主题数据缺失")?;
-            let custom =
-                serde_json::from_str::<CustomTheme>(&data).context("解析自定义主题失败")?;
-            Theme::custom(custom).map_err(anyhow::Error::msg)?
-        }
-        "/custom" => {
-            let custom = settings
-                .custom_theme
-                .clone()
-                .context("尚未导入自定义主题")?;
-            Theme::custom(custom).map_err(anyhow::Error::msg)?
-        }
-        path => Theme::parse(path.trim_start_matches('/')).context("不支持的月序操作")?,
-    };
-    save_selected_theme(&theme, &settings)?;
-    let now = Local::now().date_naive();
-    render_wallpaper(RenderOptions {
-        width: DEFAULT_WIDTH,
-        height: DEFAULT_HEIGHT,
-        year: now.year(),
-        theme,
-        today: now,
-        output: None,
-        set_wallpaper: true,
-        quiet,
-    })
-}
-
-fn load_custom_theme(path: &Path) -> Result<CustomTheme> {
+pub(crate) fn load_custom_theme(path: &Path) -> Result<CustomTheme> {
     let data = fs::read(path).with_context(|| format!("读取自定义主题失败：{}", path.display()))?;
     let theme = serde_json::from_slice::<CustomTheme>(&data).context("解析自定义主题失败")?;
     theme.validate().map_err(anyhow::Error::msg)?;
     Ok(theme)
 }
 
-fn export_theme(path: &Path, theme: &Theme, quiet: bool) -> Result<()> {
+pub(crate) fn export_theme(path: &Path, theme: &Theme, quiet: bool) -> Result<()> {
     let output = absolute_path(path)?;
     let parent = output.parent().context("自定义主题输出路径没有父目录")?;
     fs::create_dir_all(parent).context("创建自定义主题输出目录失败")?;
@@ -383,7 +366,34 @@ fn render_wallpaper(options: RenderOptions) -> Result<()> {
     Ok(())
 }
 
+pub(crate) fn apply_selected_theme(theme: &Theme) -> Result<()> {
+    let settings = load_settings()?;
+    save_selected_theme(theme, &settings)?;
+    let now = Local::now().date_naive();
+    let (width, height) = desktop_resolution();
+    render_wallpaper(RenderOptions {
+        width,
+        height,
+        year: now.year(),
+        theme: theme.clone(),
+        today: now,
+        output: None,
+        set_wallpaper: true,
+        quiet: true,
+    })
+}
+
 fn rasterize_svg(svg: &str, width: u32, height: u32, output: &Path) -> Result<()> {
+    let pixmap = render_svg_pixmap(svg, width, height)?;
+    pixmap.save_png(output).context("写入 PNG 壁纸失败")?;
+    Ok(())
+}
+
+pub(crate) fn render_svg_pixels(svg: &str, width: u32, height: u32) -> Result<Vec<u8>> {
+    Ok(render_svg_pixmap(svg, width, height)?.data().to_vec())
+}
+
+fn render_svg_pixmap(svg: &str, width: u32, height: u32) -> Result<resvg::tiny_skia::Pixmap> {
     use resvg::{tiny_skia, usvg};
 
     let mut options = usvg::Options::default();
@@ -391,8 +401,7 @@ fn rasterize_svg(svg: &str, width: u32, height: u32, output: &Path) -> Result<()
     let tree = usvg::Tree::from_str(svg, &options).context("解析原生日历版式失败")?;
     let mut pixmap = tiny_skia::Pixmap::new(width, height).context("创建壁纸画布失败")?;
     resvg::render(&tree, tiny_skia::Transform::default(), &mut pixmap.as_mut());
-    pixmap.save_png(output).context("写入 PNG 壁纸失败")?;
-    Ok(())
+    Ok(pixmap)
 }
 
 fn application_data_dir() -> Result<PathBuf> {
@@ -421,60 +430,30 @@ fn load_settings() -> Result<Settings> {
 
 fn save_settings(settings: &Settings) -> Result<()> {
     let path = application_data_dir()?.join("settings.json");
-    let temporary = path.with_extension("json.tmp");
+    let temporary = path.with_extension(format!("json.{}.tmp", std::process::id()));
     let data = serde_json::to_vec_pretty(settings).context("编码设置失败")?;
     fs::write(&temporary, data).context("写入设置失败")?;
-    if path.exists() {
-        fs::remove_file(&path).context("替换旧设置失败")?;
+    if let Err(error) = replace_settings_file(&temporary, &path) {
+        let _ = fs::remove_file(&temporary);
+        return Err(error).context("替换旧设置失败");
     }
-    fs::rename(&temporary, &path).context("保存设置失败")?;
     Ok(())
 }
 
-fn open_preview(year: i32, theme: Theme, today: NaiveDate) -> Result<()> {
-    if !(1900..=2100).contains(&year) {
-        bail!("日历年份仅支持 1900-2100");
+#[cfg(windows)]
+fn replace_settings_file(source: &Path, destination: &Path) -> std::io::Result<()> {
+    let source = wide(source.as_os_str());
+    let destination = wide(destination.as_os_str());
+    if unsafe { MoveFileExW(source.as_ptr(), destination.as_ptr(), 0x0000_0001) } == 0 {
+        Err(std::io::Error::last_os_error())
+    } else {
+        Ok(())
     }
-    let preview_dir = application_data_dir()?.join("preview");
-    for (relative, content) in preview_assets() {
-        let target = preview_dir.join(relative);
-        let parent = target.parent().context("预览资源路径无效")?;
-        fs::create_dir_all(parent).context("创建预览资源目录失败")?;
-        fs::write(target, content).context("写入预览资源失败")?;
-    }
-    let index = preview_dir.join("index.html");
-    let mut url =
-        url::Url::from_file_path(index).map_err(|_| anyhow::anyhow!("构造预览地址失败"))?;
-    let stored_custom_theme = load_settings()?.custom_theme;
-    let custom_theme = theme
-        .custom_theme()
-        .cloned()
-        .or(stored_custom_theme)
-        .filter(|value| value.validate().is_ok())
-        .map(|value| serde_json::to_string(&value))
-        .transpose()
-        .context("编码预览主题失败")?;
-    {
-        let mut query = url.query_pairs_mut();
-        query.append_pair("year", &year.to_string());
-        query.append_pair("theme", theme.as_str());
-        query.append_pair("today", &today.format("%Y-%m-%d").to_string());
-        query.append_pair("native", "1");
-        if let Some(custom_theme) = custom_theme.as_deref() {
-            query.append_pair("customTheme", custom_theme);
-        }
-    }
-    open_url(url.as_str())
 }
 
-fn preview_assets() -> [(&'static str, &'static [u8]); 5] {
-    [
-        ("index.html", include_bytes!("../index.html")),
-        ("src/styles.css", include_bytes!("../src/styles.css")),
-        ("src/lunar.js", include_bytes!("../src/lunar.js")),
-        ("src/calendar.js", include_bytes!("../src/calendar.js")),
-        ("src/app.js", include_bytes!("../src/app.js")),
-    ]
+#[cfg(not(windows))]
+fn replace_settings_file(source: &Path, destination: &Path) -> std::io::Result<()> {
+    fs::rename(source, destination)
 }
 
 #[cfg(windows)]
@@ -499,36 +478,11 @@ fn set_desktop_wallpaper(_: &Path) -> Result<()> {
     bail!("月序仅支持 Windows")
 }
 
-#[cfg(windows)]
-fn open_url(url: &str) -> Result<()> {
-    let operation = wide(OsStr::new("open"));
-    let file = wide(OsStr::new(url));
-    let result = unsafe {
-        ShellExecuteW(
-            0,
-            operation.as_ptr(),
-            file.as_ptr(),
-            std::ptr::null(),
-            std::ptr::null(),
-            1,
-        )
-    };
-    if result <= 32 {
-        bail!("Windows 无法打开预览，ShellExecuteW 返回 {result}");
-    }
-    Ok(())
-}
-
-#[cfg(not(windows))]
-fn open_url(_: &str) -> Result<()> {
-    bail!("月序仅支持 Windows")
-}
-
 fn usage() {
     eprintln!("{APP_NAME} {VERSION}");
     eprintln!("\n用法：");
     eprintln!("  LunarCalendar.exe --update --quiet");
-    eprintln!("  LunarCalendar.exe --preview");
+    eprintln!("  LunarCalendar.exe --preview  # 打开原生设置窗口");
     eprintln!("  LunarCalendar.exe --update --theme light");
     eprintln!("  LunarCalendar.exe --theme-file my-theme.json");
     eprintln!("  LunarCalendar.exe --export-theme my-theme.json");
@@ -567,19 +521,14 @@ unsafe extern "system" {
         f_win_ini: u32,
     ) -> i32;
     fn MessageBoxW(h_wnd: isize, lp_text: *const u16, lp_caption: *const u16, u_type: u32) -> i32;
+    fn SetProcessDPIAware() -> i32;
+    fn GetSystemMetrics(index: i32) -> i32;
 }
 
 #[cfg(windows)]
-#[link(name = "shell32")]
+#[link(name = "kernel32")]
 unsafe extern "system" {
-    fn ShellExecuteW(
-        hwnd: isize,
-        lp_operation: *const u16,
-        lp_file: *const u16,
-        lp_parameters: *const u16,
-        lp_directory: *const u16,
-        n_show_cmd: i32,
-    ) -> isize;
+    fn MoveFileExW(existing_file_name: *const u16, new_file_name: *const u16, flags: u32) -> i32;
 }
 
 #[cfg(test)]
@@ -600,5 +549,14 @@ mod tests {
             NaiveDate::from_ymd_opt(2026, 8, 4).unwrap()
         );
         assert!(parse_date("2026/08/04").is_err());
+    }
+
+    #[test]
+    fn uses_screen_resolution_and_falls_back_for_invalid_metrics() {
+        assert_eq!(sanitize_desktop_resolution(1920, 1200), (1920, 1200));
+        assert_eq!(
+            sanitize_desktop_resolution(0, 0),
+            (DEFAULT_WIDTH, DEFAULT_HEIGHT)
+        );
     }
 }

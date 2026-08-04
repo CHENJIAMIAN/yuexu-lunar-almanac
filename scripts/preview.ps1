@@ -13,5 +13,5 @@ if (-not (Test-Path -LiteralPath $Binary)) {
 }
 $arguments = @('--preview', "--year=$Year")
 if ($Theme) { $arguments += "--theme=$Theme" }
-& $Binary @arguments
-if ($LASTEXITCODE -ne 0) { throw "预览程序退出码：$LASTEXITCODE" }
+$process = Start-Process -FilePath $Binary -ArgumentList $arguments -WorkingDirectory $ProjectRoot -Wait -PassThru
+if ($process.ExitCode -ne 0) { throw "预览程序退出码：$($process.ExitCode)" }
