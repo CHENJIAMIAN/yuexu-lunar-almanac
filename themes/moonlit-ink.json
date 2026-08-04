@@ -1,0 +1,14 @@
+{
+  "name": "雨夜青",
+  "paper": "#112128",
+  "gutter": "#0B151A",
+  "card": "#162B33",
+  "currentCard": "#203D47",
+  "ink": "#E5F1F0",
+  "soft": "#A5B8B6",
+  "muted": "#718B8B",
+  "accent": "#E2835C",
+  "accentSoft": "#F2B38A",
+  "line": "#48646A",
+  "footer": "#91AAA9"
+}

@@ -12,7 +12,7 @@
 
 - Windows 10/11 x64
 - 全年 12 个月、农历、闰月、当天高亮
-- 深色与浅色主题，默认深色，主题会被本地记住
+- 深色、浅色与可导入的自定义主题，默认深色，主题会被本地记住
 - 登录和每天 `00:01` 自动更新；错过零点会在系统恢复后补跑
 - 用户级安装，不要求管理员权限
 - 常规更新使用 Rust + `lunar_rust` + `resvg` + `tiny-skia`，不依赖 Chrome、Edge 或 WebView
@@ -28,7 +28,7 @@ Set-ExecutionPolicy -Scope Process Bypass
 .\Install-YueXu.ps1
 ```
 
-安装完成后，桌面和开始菜单会出现“月序日历”。打开它可以预览全年日历并切换深浅主题；点击主题色块会立即应用到桌面，之后的自动更新沿用同一主题。
+安装完成后，桌面和开始菜单会出现“月序日历”。打开它可以预览全年日历并切换主题；点击第三个颜色样本可导入自定义主题 JSON。升级安装默认保留已有主题，首次安装回落到深色。
 
 ## 命令行
 
@@ -39,6 +39,10 @@ Set-ExecutionPolicy -Scope Process Bypass
 # 切换并记住浅色主题
 .\LunarCalendar.exe --update --theme light
 
+# 导出当前主题作为 JSON 模板，编辑后导入并应用
+.\LunarCalendar.exe --export-theme .\my-theme.json
+.\LunarCalendar.exe --theme-file .\my-theme.json
+
 # 生成图片但不设置为壁纸
 .\LunarCalendar.exe --update --width 1920 --height 1080 --set-wallpaper=false
 
@@ -47,6 +51,8 @@ Set-ExecutionPolicy -Scope Process Bypass
 ```
 
 生成的壁纸与偏好只写入 `%LOCALAPPDATA%\YueXu`。不读取日历账户、不上传数据、不需要 API Key。
+
+自定义主题文件中的每个颜色都必须是 `#RRGGBB`。仓库内提供 [themes/moonlit-ink.json](themes/moonlit-ink.json) 作为可直接导入的样例；导入后，登录与每日更新会沿用该主题。
 
 ## 架构
 

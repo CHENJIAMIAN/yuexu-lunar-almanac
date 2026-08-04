@@ -3,8 +3,8 @@ param(
     [int]$Width = 3840,
     [int]$Height = 2160,
     [int]$Year = (Get-Date).Year,
-    [ValidateSet('dark', 'light')]
-    [string]$Theme = 'dark',
+    [ValidateSet('dark', 'light', 'custom')]
+    [string]$Theme,
     [switch]$Quiet,
     [switch]$SetWallpaper
 )
@@ -25,11 +25,11 @@ $arguments = @(
     "--width=$Width",
     "--height=$Height",
     "--year=$Year",
-    "--theme=$Theme",
     "--output=$OutputPath",
     "--set-wallpaper=$($SetWallpaper.IsPresent.ToString().ToLowerInvariant())",
     '--quiet'
 )
+if ($Theme) { $arguments += "--theme=$Theme" }
 
 & $Binary @arguments
 if ($LASTEXITCODE -ne 0) { throw "Rust 壁纸渲染器退出码：$LASTEXITCODE" }

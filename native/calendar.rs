@@ -5,6 +5,7 @@ use lunar_rust::{
     lunar::LunarRefHelper,
     solar::{self, SolarRefHelper},
 };
+use serde::{Deserialize, Serialize};
 
 const MONTH_NAMES: [&str; 12] = [
     "一月",
@@ -38,10 +39,11 @@ const WEEK_NAMES: [&str; 7] = ["一", "二", "三", "四", "五", "六", "日"];
 const SANS_FONT: &str = "Microsoft YaHei UI, Microsoft YaHei, SimSun, sans-serif";
 const SERIF_FONT: &str = "SimSun, Microsoft YaHei, serif";
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Theme {
     Dark,
     Light,
+    Custom(Box<CustomTheme>),
 }
 
 impl Theme {
@@ -53,60 +55,148 @@ impl Theme {
         }
     }
 
-    pub fn as_str(self) -> &'static str {
+    pub fn custom(theme: CustomTheme) -> Result<Self, String> {
+        theme.validate()?;
+        Ok(Self::Custom(Box::new(theme)))
+    }
+
+    pub fn as_str(&self) -> &'static str {
         match self {
             Self::Dark => "dark",
             Self::Light => "light",
+            Self::Custom(_) => "custom",
         }
     }
 
-    fn palette(self) -> Palette {
+    pub fn custom_theme(&self) -> Option<&CustomTheme> {
+        match self {
+            Self::Custom(theme) => Some(theme.as_ref()),
+            Self::Dark | Self::Light => None,
+        }
+    }
+
+    pub fn exportable(&self) -> CustomTheme {
+        match self {
+            Self::Dark => CustomTheme {
+                name: "深色基础".to_owned(),
+                palette: self.palette(),
+            },
+            Self::Light => CustomTheme {
+                name: "浅色基础".to_owned(),
+                palette: self.palette(),
+            },
+            Self::Custom(theme) => theme.as_ref().clone(),
+        }
+    }
+
+    fn palette(&self) -> Palette {
         match self {
             Self::Dark => Palette {
-                paper: "#19211C",
-                gutter: "#1F2420",
-                card: "#1E2822",
-                current_card: "#28362D",
-                ink: "#F1EADF",
-                soft: "#9FAAA1",
-                muted: "#78857C",
-                accent: "#DF6B54",
-                accent_soft: "#E3A294",
-                line: "#536057",
-                footer: "#909A91",
+                paper: "#19211C".to_owned(),
+                gutter: "#1F2420".to_owned(),
+                card: "#1E2822".to_owned(),
+                current_card: "#28362D".to_owned(),
+                ink: "#F1EADF".to_owned(),
+                soft: "#9FAAA1".to_owned(),
+                muted: "#78857C".to_owned(),
+                accent: "#DF6B54".to_owned(),
+                accent_soft: "#E3A294".to_owned(),
+                line: "#536057".to_owned(),
+                footer: "#909A91".to_owned(),
             },
             Self::Light => Palette {
-                paper: "#F4EEE3",
-                gutter: "#E8DFD0",
-                card: "#FBF7EF",
-                current_card: "#FFF9EF",
-                ink: "#282B27",
-                soft: "#68716A",
-                muted: "#858C84",
-                accent: "#B0523E",
-                accent_soft: "#8E3D30",
-                line: "#CFC6B8",
-                footer: "#707870",
+                paper: "#F4EEE3".to_owned(),
+                gutter: "#E8DFD0".to_owned(),
+                card: "#FBF7EF".to_owned(),
+                current_card: "#FFF9EF".to_owned(),
+                ink: "#282B27".to_owned(),
+                soft: "#68716A".to_owned(),
+                muted: "#858C84".to_owned(),
+                accent: "#B0523E".to_owned(),
+                accent_soft: "#8E3D30".to_owned(),
+                line: "#CFC6B8".to_owned(),
+                footer: "#707870".to_owned(),
             },
+            Self::Custom(theme) => theme.palette.clone(),
         }
     }
 }
 
-struct Palette {
-    paper: &'static str,
-    gutter: &'static str,
-    card: &'static str,
-    current_card: &'static str,
-    ink: &'static str,
-    soft: &'static str,
-    muted: &'static str,
-    accent: &'static str,
-    accent_soft: &'static str,
-    line: &'static str,
-    footer: &'static str,
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CustomTheme {
+    #[serde(default = "default_custom_name")]
+    pub name: String,
+    #[serde(flatten)]
+    pub palette: Palette,
 }
 
-pub fn wallpaper_svg(width: u32, height: u32, year: i32, theme: Theme, today: NaiveDate) -> String {
+impl CustomTheme {
+    pub fn validate(&self) -> Result<(), String> {
+        if self.name.trim().is_empty() || self.name.chars().count() > 48 {
+            return Err("主题名称应为 1-48 个字符".to_owned());
+        }
+        self.palette.validate()
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Palette {
+    pub paper: String,
+    pub gutter: String,
+    pub card: String,
+    pub current_card: String,
+    pub ink: String,
+    pub soft: String,
+    pub muted: String,
+    pub accent: String,
+    pub accent_soft: String,
+    pub line: String,
+    pub footer: String,
+}
+
+impl Palette {
+    fn validate(&self) -> Result<(), String> {
+        for (name, color) in [
+            ("paper", &self.paper),
+            ("gutter", &self.gutter),
+            ("card", &self.card),
+            ("currentCard", &self.current_card),
+            ("ink", &self.ink),
+            ("soft", &self.soft),
+            ("muted", &self.muted),
+            ("accent", &self.accent),
+            ("accentSoft", &self.accent_soft),
+            ("line", &self.line),
+            ("footer", &self.footer),
+        ] {
+            validate_hex_color(name, color)?;
+        }
+        Ok(())
+    }
+}
+
+fn default_custom_name() -> String {
+    "未命名主题".to_owned()
+}
+
+fn validate_hex_color(name: &str, color: &str) -> Result<(), String> {
+    if color.len() != 7
+        || !color.starts_with('#')
+        || !color.as_bytes()[1..].iter().all(u8::is_ascii_hexdigit)
+    {
+        return Err(format!("{name} 必须是 #RRGGBB 格式"));
+    }
+    Ok(())
+}
+
+pub fn wallpaper_svg(
+    width: u32,
+    height: u32,
+    year: i32,
+    theme: &Theme,
+    today: NaiveDate,
+) -> String {
     let palette = theme.palette();
     let width = f64::from(width);
     let height = f64::from(height);
@@ -164,7 +254,7 @@ pub fn wallpaper_svg(width: u32, height: u32, year: i32, theme: Theme, today: Na
         footer_y,
         &format!("{year} · {ganzhi}年 · 月序 / LUNAR ALMANAC"),
         10.0 * unit,
-        palette.footer,
+        &palette.footer,
         "start",
         400,
         SANS_FONT,
@@ -183,7 +273,7 @@ pub fn wallpaper_svg(width: u32, height: u32, year: i32, theme: Theme, today: Na
         footer_y,
         "今日高亮 · LOCAL / OFFLINE",
         9.0 * unit,
-        palette.footer,
+        &palette.footer,
         "end",
         400,
         SANS_FONT,
@@ -208,14 +298,14 @@ fn render_month(
     let is_current_month = today.year() == year && today.month() == month;
     let stroke_width = if is_current_month { 1.8 * unit } else { unit };
     let fill = if is_current_month {
-        palette.current_card
+        &palette.current_card
     } else {
-        palette.card
+        &palette.card
     };
     let stroke = if is_current_month {
-        palette.accent
+        &palette.accent
     } else {
-        palette.line
+        &palette.line
     };
     let _ = write!(
         svg,
@@ -231,7 +321,7 @@ fn render_month(
         header_baseline,
         &format!("{month:02}"),
         9.0 * unit,
-        palette.accent,
+        &palette.accent,
         "start",
         500,
         SANS_FONT,
@@ -242,7 +332,7 @@ fn render_month(
         header_baseline,
         MONTH_NAMES[(month - 1) as usize],
         15.0 * unit,
-        palette.ink,
+        &palette.ink,
         "start",
         600,
         SANS_FONT,
@@ -253,7 +343,7 @@ fn render_month(
         header_baseline,
         MONTH_EN[(month - 1) as usize],
         7.5 * unit,
-        palette.muted,
+        &palette.muted,
         "end",
         500,
         SANS_FONT,
@@ -274,9 +364,9 @@ fn render_month(
     for (index, weekday) in WEEK_NAMES.iter().enumerate() {
         let center_x = day_grid_left + (index as f64 + 0.5) * cell_width;
         let fill = if index >= 5 {
-            palette.accent_soft
+            &palette.accent_soft
         } else {
-            palette.soft
+            &palette.soft
         };
         text(
             svg,
@@ -310,11 +400,11 @@ fn render_month(
         let number_fill = if is_today {
             "#FFF8EE"
         } else if is_weekend {
-            palette.accent_soft
+            &palette.accent_soft
         } else {
-            palette.ink
+            &palette.ink
         };
-        let lunar_fill = if is_today { "#FFF8EE" } else { palette.soft };
+        let lunar_fill = if is_today { "#FFF8EE" } else { &palette.soft };
         if is_today {
             let radius = (cell_width.min(cell_height) * 0.43).max(10.0 * unit);
             let _ = write!(
@@ -425,7 +515,7 @@ mod tests {
             1920,
             1080,
             2026,
-            Theme::Dark,
+            &Theme::Dark,
             NaiveDate::from_ymd_opt(2026, 8, 4).unwrap(),
         );
         assert!(svg.contains("12"));
@@ -439,5 +529,48 @@ mod tests {
         assert_eq!(Theme::parse("dark"), Some(Theme::Dark));
         assert_eq!(Theme::parse("light"), Some(Theme::Light));
         assert_eq!(Theme::parse("forest"), None);
+    }
+
+    #[test]
+    fn accepts_valid_custom_palette_and_uses_it_in_svg() {
+        let custom = CustomTheme {
+            name: "雨夜青".to_owned(),
+            palette: Palette {
+                paper: "#112128".to_owned(),
+                gutter: "#0B151A".to_owned(),
+                card: "#162B33".to_owned(),
+                current_card: "#203D47".to_owned(),
+                ink: "#E5F1F0".to_owned(),
+                soft: "#A5B8B6".to_owned(),
+                muted: "#718B8B".to_owned(),
+                accent: "#E2835C".to_owned(),
+                accent_soft: "#F2B38A".to_owned(),
+                line: "#48646A".to_owned(),
+                footer: "#91AAA9".to_owned(),
+            },
+        };
+        let theme = Theme::custom(custom).unwrap();
+        let svg = wallpaper_svg(
+            1920,
+            1080,
+            2026,
+            &theme,
+            NaiveDate::from_ymd_opt(2026, 8, 4).unwrap(),
+        );
+        assert!(svg.contains("#112128"));
+        assert!(svg.contains("#E2835C"));
+    }
+
+    #[test]
+    fn rejects_unsafe_custom_color_values() {
+        let mut palette = Theme::Dark.palette();
+        palette.paper = "url(javascript:alert(1))".to_owned();
+        assert!(
+            Theme::custom(CustomTheme {
+                name: "无效主题".to_owned(),
+                palette,
+            })
+            .is_err()
+        );
     }
 }

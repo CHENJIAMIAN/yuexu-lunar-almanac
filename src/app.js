@@ -7,6 +7,7 @@
 
   body.classList.toggle('wallpaper-mode', state.wallpaper);
   body.dataset.theme = state.theme;
+  if (state.theme === 'custom' && state.customTheme) applyCustomTheme(root, state.customTheme);
   root.style.setProperty('--canvas-width', `${state.width}px`);
   root.style.setProperty('--canvas-height', `${state.height}px`);
   root.style.setProperty('--canvas-scale', String(Math.min(state.width / 1920, state.height / 1080)));
@@ -37,18 +38,49 @@
   }).join('');
 
   const yearControl = document.querySelector('[data-year-control]');
+  const themeFile = document.querySelector('[data-theme-file]');
   yearControl.textContent = state.year;
   document.querySelector('[data-prev-year]').addEventListener('click', () => navigateYear(state.year - 1));
   document.querySelector('[data-next-year]').addEventListener('click', () => navigateYear(state.year + 1));
   document.querySelectorAll('[data-theme-choice]').forEach((button) => {
     button.classList.toggle('selected', button.dataset.themeChoice === state.theme);
     button.addEventListener('click', () => {
-      if (new URLSearchParams(window.location.search).get('native') === '1') {
-        window.location.href = `yuexu://theme/${button.dataset.themeChoice}`;
+      const choice = button.dataset.themeChoice;
+      if (choice === 'custom') {
+        if (state.customTheme) {
+          if (new URLSearchParams(window.location.search).get('native') === '1') {
+            window.location.href = 'yuexu://theme/custom';
+            return;
+          }
+          navigateCustomTheme(state.customTheme);
+          return;
+        }
+        themeFile.click();
         return;
       }
-      navigateTheme(button.dataset.themeChoice);
+      if (new URLSearchParams(window.location.search).get('native') === '1') {
+        window.location.href = `yuexu://theme/${choice}`;
+        return;
+      }
+      navigateTheme(choice);
     });
+  });
+  themeFile.addEventListener('change', async () => {
+    const [file] = themeFile.files;
+    themeFile.value = '';
+    if (!file) return;
+    const customTheme = parseCustomTheme(await file.text());
+    if (!customTheme) {
+      window.alert('主题文件格式无效。');
+      return;
+    }
+    if (new URLSearchParams(window.location.search).get('native') === '1') {
+      const url = new URL('yuexu://theme/import');
+      url.searchParams.set('data', JSON.stringify(customTheme));
+      window.location.href = url.toString();
+      return;
+    }
+    navigateCustomTheme(customTheme);
   });
   document.querySelector('[data-open-wallpaper]').addEventListener('click', () => {
     const url = new URL(window.location.href);
@@ -67,7 +99,35 @@
   function navigateTheme(nextTheme) {
     const url = new URL(window.location.href);
     url.searchParams.set('theme', nextTheme);
+    url.searchParams.delete('customTheme');
     window.location.href = url.toString();
+  }
+
+  function navigateCustomTheme(customTheme) {
+    const url = new URL(window.location.href);
+    url.searchParams.set('theme', 'custom');
+    url.searchParams.set('customTheme', JSON.stringify(customTheme));
+    window.location.href = url.toString();
+  }
+
+  function applyCustomTheme(target, theme) {
+    const variables = {
+      paper: '--paper',
+      gutter: '--gutter',
+      card: '--card',
+      currentCard: '--current-card',
+      ink: '--ink',
+      soft: '--ink-soft',
+      muted: '--muted',
+      accent: '--accent',
+      accentSoft: '--accent-deep',
+      line: '--line',
+      footer: '--footer'
+    };
+    Object.entries(variables).forEach(([key, variable]) => target.style.setProperty(variable, theme[key]));
+    target.style.setProperty('--page-bg', theme.gutter);
+    target.style.setProperty('--paper-soft', theme.card);
+    target.style.setProperty('--moss', theme.soft);
   }
 
   // 让壁纸模式只保留一个固定画布，浏览器不会因为窗口尺寸改变排版。

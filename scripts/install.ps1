@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
-    [ValidateSet('dark', 'light')]
-    [string]$Theme = 'dark'
+    [ValidateSet('keep', 'dark', 'light')]
+    [string]$Theme = 'keep'
 )
 
 $ErrorActionPreference = 'Stop'

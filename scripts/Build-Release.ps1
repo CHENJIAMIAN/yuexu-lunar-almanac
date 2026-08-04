@@ -34,6 +34,7 @@ $files = @(
     @{ Source = 'README.md'; Target = 'README.md' },
     @{ Source = 'LICENSE'; Target = 'LICENSE' },
     @{ Source = 'CHANGELOG.md'; Target = 'CHANGELOG.md' },
+    @{ Source = 'themes\moonlit-ink.json'; Target = 'custom-theme.example.json' },
     @{ Source = 'VERSION'; Target = 'VERSION' }
 )
 foreach ($file in $files) {

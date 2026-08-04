@@ -1,12 +1,17 @@
 [CmdletBinding()]
 param(
-    [ValidateSet('dark', 'light')]
-    [string]$Theme = 'dark',
+    [ValidateSet('dark', 'light', 'custom')]
+    [string]$Theme,
     [switch]$Quiet
 )
 
 $ErrorActionPreference = 'Stop'
-$ProjectRoot = Split-Path -Parent $PSScriptRoot
 $Generator = Join-Path $PSScriptRoot 'generate-wallpaper.ps1'
-
-& $Generator -Width 3840 -Height 2160 -Theme $Theme -SetWallpaper:$true -Quiet:$Quiet
+$arguments = @{
+    Width = 3840
+    Height = 2160
+    SetWallpaper = $true
+    Quiet = $Quiet
+}
+if ($Theme) { $arguments.Theme = $Theme }
+& $Generator @arguments

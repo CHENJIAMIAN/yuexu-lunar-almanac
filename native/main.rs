@@ -10,7 +10,7 @@ use std::{
 };
 
 use anyhow::{Context, Result, bail};
-use calendar::Theme;
+use calendar::{CustomTheme, Theme};
 use chrono::{Datelike, Local, NaiveDate};
 use serde::{Deserialize, Serialize};
 
@@ -33,6 +33,8 @@ struct CliOptions {
     height: u32,
     year: i32,
     requested_theme: Option<String>,
+    theme_file: Option<PathBuf>,
+    export_theme: Option<PathBuf>,
     today: NaiveDate,
     output: Option<PathBuf>,
     set_wallpaper: bool,
@@ -42,6 +44,12 @@ struct CliOptions {
 #[derive(Debug, Serialize, Deserialize, Default)]
 struct Settings {
     theme: String,
+    #[serde(
+        rename = "customTheme",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    custom_theme: Option<CustomTheme>,
 }
 
 fn main() {
@@ -63,7 +71,14 @@ fn run() -> Result<()> {
         return handle_protocol(&protocol, options.quiet);
     }
 
-    let theme = resolve_theme(options.requested_theme.as_deref())?;
+    let theme = resolve_theme(
+        options.requested_theme.as_deref(),
+        options.theme_file.as_deref(),
+    )?;
+    if let Some(path) = options.export_theme.as_deref() {
+        export_theme(path, &theme, options.quiet)?;
+        return Ok(());
+    }
     if options.preview {
         return open_preview(options.year, theme, options.today);
     }
@@ -96,6 +111,8 @@ fn parse_cli() -> Result<CliOptions> {
         height: DEFAULT_HEIGHT,
         year: now.year(),
         requested_theme: None,
+        theme_file: None,
+        export_theme: None,
         today: now,
         output: None,
         set_wallpaper: true,
@@ -126,6 +143,10 @@ fn parse_cli() -> Result<CliOptions> {
             options.year = parse_i32("年份", value)?;
         } else if let Some(value) = argument.strip_prefix("--theme=") {
             options.requested_theme = Some(value.to_owned());
+        } else if let Some(value) = argument.strip_prefix("--theme-file=") {
+            options.theme_file = Some(PathBuf::from(value));
+        } else if let Some(value) = argument.strip_prefix("--export-theme=") {
+            options.export_theme = Some(PathBuf::from(value));
         } else if let Some(value) = argument.strip_prefix("--today=") {
             options.today = parse_date(value)?;
         } else if let Some(value) = argument.strip_prefix("--output=") {
@@ -138,6 +159,8 @@ fn parse_cli() -> Result<CliOptions> {
                 | "--height"
                 | "--year"
                 | "--theme"
+                | "--theme-file"
+                | "--export-theme"
                 | "--today"
                 | "--output"
                 | "--set-wallpaper"
@@ -149,6 +172,8 @@ fn parse_cli() -> Result<CliOptions> {
                 "--height" => options.height = parse_u32("高度", value)?,
                 "--year" => options.year = parse_i32("年份", value)?,
                 "--theme" => options.requested_theme = Some(value.to_owned()),
+                "--theme-file" => options.theme_file = Some(PathBuf::from(value)),
+                "--export-theme" => options.export_theme = Some(PathBuf::from(value)),
                 "--today" => options.today = parse_date(value)?,
                 "--output" => options.output = Some(PathBuf::from(value)),
                 "--set-wallpaper" => options.set_wallpaper = parse_bool(value)?,
@@ -165,7 +190,17 @@ fn parse_cli() -> Result<CliOptions> {
     if options.preview && options.update {
         bail!("--preview 与 --update 不能同时使用");
     }
-    if !options.preview && !options.show_version && !options.update {
+    if options.preview && options.export_theme.is_some() {
+        bail!("--preview 与 --export-theme 不能同时使用");
+    }
+    if options.theme_file.is_some() && options.export_theme.is_some() {
+        bail!("--theme-file 与 --export-theme 不能同时使用");
+    }
+    if !options.preview
+        && !options.show_version
+        && !options.update
+        && options.export_theme.is_none()
+    {
         options.update = true;
     }
     Ok(options)
@@ -195,27 +230,66 @@ fn parse_date(value: &str) -> Result<NaiveDate> {
     NaiveDate::parse_from_str(value, "%Y-%m-%d").context("当天日期格式应为 YYYY-MM-DD")
 }
 
-fn resolve_theme(requested: Option<&str>) -> Result<Theme> {
-    if let Some(value) = requested {
-        let theme = Theme::parse(value).context("主题仅支持 dark 或 light")?;
-        save_settings(&Settings {
-            theme: theme.as_str().to_owned(),
-        })?;
+fn resolve_theme(requested: Option<&str>, theme_file: Option<&Path>) -> Result<Theme> {
+    let settings = load_settings()?;
+    if let Some(path) = theme_file {
+        if let Some(value) = requested
+            && value != "custom"
+        {
+            bail!("指定 --theme-file 时，主题只能省略或设为 custom");
+        }
+        let theme = Theme::custom(load_custom_theme(path)?).map_err(anyhow::Error::msg)?;
+        save_selected_theme(&theme, &settings)?;
         return Ok(theme);
     }
-    let settings = load_settings()?;
+    if let Some(value) = requested {
+        if value == "custom" {
+            let custom = settings
+                .custom_theme
+                .clone()
+                .context("尚未导入自定义主题，请先使用 --theme-file 导入")?;
+            let theme = Theme::custom(custom).map_err(anyhow::Error::msg)?;
+            save_selected_theme(&theme, &settings)?;
+            return Ok(theme);
+        }
+        let theme = Theme::parse(value).context("主题仅支持 dark、light 或 custom")?;
+        save_selected_theme(&theme, &settings)?;
+        return Ok(theme);
+    }
+    if settings.theme == "custom"
+        && let Some(custom) = settings.custom_theme
+    {
+        return Theme::custom(custom).map_err(anyhow::Error::msg);
+    }
     Ok(Theme::parse(&settings.theme).unwrap_or(Theme::Dark))
 }
 
 fn handle_protocol(raw_url: &str, quiet: bool) -> Result<()> {
-    let theme = raw_url
-        .strip_prefix("yuexu://theme/")
-        .and_then(|value| value.split('?').next())
-        .and_then(Theme::parse)
-        .context("不支持的月序操作")?;
-    save_settings(&Settings {
-        theme: theme.as_str().to_owned(),
-    })?;
+    let url = url::Url::parse(raw_url).context("无效的月序链接")?;
+    if url.scheme() != "yuexu" || url.host_str() != Some("theme") {
+        bail!("不支持的月序操作");
+    }
+    let settings = load_settings()?;
+    let theme = match url.path() {
+        "/import" => {
+            let data = url
+                .query_pairs()
+                .find_map(|(name, value)| (name == "data").then_some(value.into_owned()))
+                .context("自定义主题数据缺失")?;
+            let custom =
+                serde_json::from_str::<CustomTheme>(&data).context("解析自定义主题失败")?;
+            Theme::custom(custom).map_err(anyhow::Error::msg)?
+        }
+        "/custom" => {
+            let custom = settings
+                .custom_theme
+                .clone()
+                .context("尚未导入自定义主题")?;
+            Theme::custom(custom).map_err(anyhow::Error::msg)?
+        }
+        path => Theme::parse(path.trim_start_matches('/')).context("不支持的月序操作")?,
+    };
+    save_selected_theme(&theme, &settings)?;
     let now = Local::now().date_naive();
     render_wallpaper(RenderOptions {
         width: DEFAULT_WIDTH,
@@ -226,6 +300,36 @@ fn handle_protocol(raw_url: &str, quiet: bool) -> Result<()> {
         output: None,
         set_wallpaper: true,
         quiet,
+    })
+}
+
+fn load_custom_theme(path: &Path) -> Result<CustomTheme> {
+    let data = fs::read(path).with_context(|| format!("读取自定义主题失败：{}", path.display()))?;
+    let theme = serde_json::from_slice::<CustomTheme>(&data).context("解析自定义主题失败")?;
+    theme.validate().map_err(anyhow::Error::msg)?;
+    Ok(theme)
+}
+
+fn export_theme(path: &Path, theme: &Theme, quiet: bool) -> Result<()> {
+    let output = absolute_path(path)?;
+    let parent = output.parent().context("自定义主题输出路径没有父目录")?;
+    fs::create_dir_all(parent).context("创建自定义主题输出目录失败")?;
+    let data = serde_json::to_vec_pretty(&theme.exportable()).context("编码自定义主题失败")?;
+    fs::write(&output, data)
+        .with_context(|| format!("写入自定义主题失败：{}", output.display()))?;
+    if !quiet {
+        println!("已导出自定义主题：{}", output.display());
+    }
+    Ok(())
+}
+
+fn save_selected_theme(theme: &Theme, previous: &Settings) -> Result<()> {
+    save_settings(&Settings {
+        theme: theme.as_str().to_owned(),
+        custom_theme: theme
+            .custom_theme()
+            .cloned()
+            .or_else(|| previous.custom_theme.clone()),
     })
 }
 
@@ -259,7 +363,7 @@ fn render_wallpaper(options: RenderOptions) -> Result<()> {
         options.width,
         options.height,
         options.year,
-        options.theme,
+        &options.theme,
         options.today,
     );
     rasterize_svg(&svg, options.width, options.height, &output)?;
@@ -341,12 +445,24 @@ fn open_preview(year: i32, theme: Theme, today: NaiveDate) -> Result<()> {
     let index = preview_dir.join("index.html");
     let mut url =
         url::Url::from_file_path(index).map_err(|_| anyhow::anyhow!("构造预览地址失败"))?;
+    let stored_custom_theme = load_settings()?.custom_theme;
+    let custom_theme = theme
+        .custom_theme()
+        .cloned()
+        .or(stored_custom_theme)
+        .filter(|value| value.validate().is_ok())
+        .map(|value| serde_json::to_string(&value))
+        .transpose()
+        .context("编码预览主题失败")?;
     {
         let mut query = url.query_pairs_mut();
         query.append_pair("year", &year.to_string());
         query.append_pair("theme", theme.as_str());
         query.append_pair("today", &today.format("%Y-%m-%d").to_string());
         query.append_pair("native", "1");
+        if let Some(custom_theme) = custom_theme.as_deref() {
+            query.append_pair("customTheme", custom_theme);
+        }
     }
     open_url(url.as_str())
 }
@@ -414,6 +530,8 @@ fn usage() {
     eprintln!("  LunarCalendar.exe --update --quiet");
     eprintln!("  LunarCalendar.exe --preview");
     eprintln!("  LunarCalendar.exe --update --theme light");
+    eprintln!("  LunarCalendar.exe --theme-file my-theme.json");
+    eprintln!("  LunarCalendar.exe --export-theme my-theme.json");
 }
 
 fn report_error(error: &anyhow::Error, quiet: bool) {

@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
-    [ValidateSet('dark', 'light')]
-    [string]$Theme = 'dark'
+    [ValidateSet('keep', 'dark', 'light')]
+    [string]$Theme = 'keep'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -42,8 +42,10 @@ Copy-Item -LiteralPath $SourceBinary -Destination $Binary -Force
 Copy-Item -LiteralPath $SourceUninstaller -Destination $Uninstaller -Force
 Copy-Item -LiteralPath $SourceIcon -Destination $Icon -Force
 
-# 用新版本先生成一次，确保安装完成时桌面就是可用状态。
-$initialUpdate = Start-Process -FilePath $Binary -ArgumentList @('--update', '--theme', $Theme, '--quiet') -Wait -PassThru -WindowStyle Hidden
+# 用新版本先生成一次；默认保留已有主题，首次安装会回落到深色。
+$initialArguments = @('--update', '--quiet')
+if ($Theme -ne 'keep') { $initialArguments += @('--theme', $Theme) }
+$initialUpdate = Start-Process -FilePath $Binary -ArgumentList $initialArguments -Wait -PassThru -WindowStyle Hidden
 if ($initialUpdate.ExitCode -ne 0) { throw "月序无法生成初始壁纸，退出码：$($initialUpdate.ExitCode)" }
 
 foreach ($legacyTask in @('LunarCalendarDailyWallpaper', $TaskName)) {

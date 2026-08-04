@@ -21,10 +21,28 @@ function parseQuery() {
   const year = Number(query.get('year')) || new Date().getFullYear();
   const today = query.get('today') || localTodayKey();
   const wallpaper = query.get('wallpaper') === '1';
-  const theme = query.get('theme') === 'light' ? 'light' : 'dark';
+  const customTheme = parseCustomTheme(query.get('customTheme'));
+  const requestedTheme = query.get('theme');
+  const theme = requestedTheme === 'custom' && customTheme ? 'custom' : requestedTheme === 'light' ? 'light' : 'dark';
   const width = Number(query.get('width')) || 1920;
   const height = Number(query.get('height')) || 1080;
-  return { year: Math.min(2100, Math.max(1900, year)), today, wallpaper, theme, width, height };
+  return { year: Math.min(2100, Math.max(1900, year)), today, wallpaper, theme, customTheme, width, height };
+}
+
+const CUSTOM_THEME_COLOR_KEYS = ['paper', 'gutter', 'card', 'currentCard', 'ink', 'soft', 'muted', 'accent', 'accentSoft', 'line', 'footer'];
+
+function parseCustomTheme(raw) {
+  if (!raw) return null;
+  try {
+    const theme = JSON.parse(raw);
+    return isValidCustomTheme(theme) ? theme : null;
+  } catch {
+    return null;
+  }
+}
+
+function isValidCustomTheme(theme) {
+  return Boolean(theme) && typeof theme === 'object' && CUSTOM_THEME_COLOR_KEYS.every((key) => /^#[0-9a-f]{6}$/i.test(theme[key] || ''));
 }
 
 function createYearData(year, todayKey) {
