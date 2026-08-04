@@ -12,10 +12,25 @@ $SourceIcon = Join-Path $PackageRoot 'YueXu.ico'
 $VersionFile = Join-Path $PackageRoot 'VERSION'
 $InstallRoot = Join-Path $env:LOCALAPPDATA 'Programs\YueXu'
 $TaskName = 'YueXuWallpaper'
+$CodexTaskPath = '\Codex\'
+$LegacyTaskPath = '\'
 
 if (-not (Test-Path -LiteralPath $SourceBinary)) { throw "找不到发行程序：$SourceBinary" }
 if (-not (Test-Path -LiteralPath $SourceUninstaller)) { throw "找不到卸载程序：$SourceUninstaller" }
 if (-not (Test-Path -LiteralPath $SourceIcon)) { throw "找不到产品图标：$SourceIcon" }
+
+function Ensure-CodexTaskFolder {
+    $service = New-Object -ComObject 'Schedule.Service'
+    $service.Connect()
+    $root = $service.GetFolder('\')
+    try {
+        $root.GetFolder('Codex') | Out-Null
+    } catch {
+        $root.CreateFolder('Codex', $null) | Out-Null
+    }
+}
+
+Ensure-CodexTaskFolder
 
 $Version = if (Test-Path -LiteralPath $VersionFile) { (Get-Content -LiteralPath $VersionFile -Raw -Encoding UTF8).Trim() } else { '0.1.0' }
 $Binary = Join-Path $InstallRoot 'LunarCalendar.exe'
@@ -32,8 +47,8 @@ $initialUpdate = Start-Process -FilePath $Binary -ArgumentList @('--update', '--
 if ($initialUpdate.ExitCode -ne 0) { throw "月序无法生成初始壁纸，退出码：$($initialUpdate.ExitCode)" }
 
 foreach ($legacyTask in @('LunarCalendarDailyWallpaper', $TaskName)) {
-    $existing = Get-ScheduledTask -TaskName $legacyTask -ErrorAction SilentlyContinue
-    if ($existing) { Unregister-ScheduledTask -TaskName $legacyTask -Confirm:$false }
+    $existing = Get-ScheduledTask -TaskPath $LegacyTaskPath -TaskName $legacyTask -ErrorAction SilentlyContinue
+    if ($existing) { Unregister-ScheduledTask -TaskPath $LegacyTaskPath -TaskName $legacyTask -Confirm:$false }
 }
 
 $action = New-ScheduledTaskAction -Execute $Binary -Argument '--update --quiet'
@@ -42,7 +57,7 @@ $triggers = @(
     (New-ScheduledTaskTrigger -Daily -At 00:01)
 )
 $settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -ExecutionTimeLimit (New-TimeSpan -Minutes 3)
-Register-ScheduledTask -TaskName $TaskName -Action $action -Trigger $triggers -Settings $settings -Description '月序：每天更新农历桌面日历。' -Force | Out-Null
+Register-ScheduledTask -TaskPath $CodexTaskPath -TaskName $TaskName -Action $action -Trigger $triggers -Settings $settings -Description '月序：每天更新农历桌面日历。' -Force | Out-Null
 
 function New-YueXuShortcut {
     param(
@@ -95,4 +110,4 @@ foreach ($entry in $uninstallValues.GetEnumerator()) {
 
 Write-Output '月序已安装。'
 Write-Output "安装目录：$InstallRoot"
-Write-Output "自动更新任务：$TaskName"
+Write-Output "自动更新任务：$CodexTaskPath$TaskName"

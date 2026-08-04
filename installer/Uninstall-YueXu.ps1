@@ -4,10 +4,11 @@ param()
 $ErrorActionPreference = 'Continue'
 $InstallRoot = Split-Path -Parent $PSCommandPath
 $TaskName = 'YueXuWallpaper'
+$TaskPaths = @('\Codex\', '\')
 
-foreach ($task in @($TaskName, 'LunarCalendarDailyWallpaper')) {
-    if (Get-ScheduledTask -TaskName $task -ErrorAction SilentlyContinue) {
-        Unregister-ScheduledTask -TaskName $task -Confirm:$false
+foreach ($taskPath in $TaskPaths) {
+    if (Get-ScheduledTask -TaskPath $taskPath -TaskName $TaskName -ErrorAction SilentlyContinue) {
+        Unregister-ScheduledTask -TaskPath $taskPath -TaskName $TaskName -Confirm:$false
     }
 }
 

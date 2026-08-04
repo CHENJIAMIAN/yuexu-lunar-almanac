@@ -8,7 +8,6 @@ $ProjectRoot = Split-Path -Parent $PSScriptRoot
 $RunScript = Join-Path $PSScriptRoot 'run.ps1'
 $TaskName = 'LunarCalendarDailyWallpaper'
 $CodexTaskPath = '\Codex\'
-$PersonalTaskPath = '\Personal\'
 $LegacyTaskPath = '\'
 
 if (-not (Test-Path $RunScript)) { throw "找不到启动脚本：$RunScript" }
@@ -25,7 +24,6 @@ function Ensure-TaskFolder([string]$FolderName) {
 }
 
 Ensure-TaskFolder 'Codex'
-Ensure-TaskFolder 'Personal'
 
 & $RunScript
 
