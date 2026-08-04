@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="dark light" />
+    <title>月序 · LUNAR ALMANAC</title>
+    <link rel="stylesheet" href="src/styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="studio-toolbar studio-only">
+        <div class="brand-lockup">
+          <div class="brand-mark">月序</div>
+          <div>
+            <div class="brand-name">LUNAR ALMANAC</div>
+            <div class="brand-note">离线农历桌面日历</div>
+          </div>
+        </div>
+        <div class="toolbar-actions">
+          <button class="icon-button" type="button" data-prev-year aria-label="上一年" title="上一年">‹</button>
+          <span class="year-control" data-year-control>2026</span>
+          <button class="icon-button" type="button" data-next-year aria-label="下一年" title="下一年">›</button>
+          <span class="toolbar-divider" aria-hidden="true"></span>
+          <button class="swatch swatch-dark" type="button" data-theme-choice="dark" aria-label="深色主题" title="深色主题"></button>
+          <button class="swatch swatch-light" type="button" data-theme-choice="light" aria-label="浅色主题" title="浅色主题"></button>
+          <button class="toolbar-button" type="button" data-open-wallpaper title="打开壁纸视图"><span aria-hidden="true">↗</span><span>壁纸视图</span></button>
+        </div>
+      </header>
+
+      <main class="stage-wrap">
+        <section class="wallpaper" aria-label="月序全年农历日历">
+          <div class="composition">
+            <section class="calendar-column">
+              <div class="month-grid" data-month-grid></div>
+            </section>
+          </div>
+          <footer class="wallpaper-footer">
+            <span><b data-year>2026</b><i data-year-cn>· 丙午年</i> · 月序 / LUNAR ALMANAC</span>
+            <span><em class="footer-today-mark"></em>今日高亮 · LOCAL / OFFLINE</span>
+          </footer>
+        </section>
+      </main>
+
+      <footer class="studio-footer studio-only">
+        <span>月序会在每天零点更新当天标记</span>
+        <span>本地计算 · 无网络请求</span>
+      </footer>
+    </div>
+    <script src="src/lunar.js"></script>
+    <script src="src/calendar.js"></script>
+    <script src="src/app.js"></script>
+  </body>
+</html>

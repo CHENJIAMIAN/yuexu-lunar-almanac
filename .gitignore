@@ -1,0 +1,6 @@
+/output/
+/dist/
+/release/
+*.exe
+*.capture.png
+.codegraph/
