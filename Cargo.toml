@@ -1,6 +1,6 @@
 [package]
 name = "yuexu-lunar-almanac"
-version = "0.4.0"
+version = "0.4.1"
 edition = "2024"
 description = "月序：零常驻的 Windows 农历桌面日历"
 license = "MIT"

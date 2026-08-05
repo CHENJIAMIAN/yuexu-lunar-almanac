@@ -477,9 +477,10 @@ impl SettingsWindow {
         };
         *field.color_mut(&mut self.ensure_custom().palette) = hex_from_colorref(color);
         self.remember_custom_theme();
-        self.dirty = true;
-        self.status = "配色已更新，尚未应用到桌面。".to_owned();
-        self.refresh_preview()
+        self.refresh_preview()?;
+        self.apply()?;
+        self.status = "配色已实时应用到桌面；后续自动更新会沿用此主题。".to_owned();
+        Ok(())
     }
 
     fn import_theme(&mut self, hwnd: Hwnd) -> Result<()> {
@@ -650,7 +651,7 @@ pub(crate) fn open_settings(
 unsafe extern "system" fn window_proc(
     hwnd: Hwnd,
     message: u32,
-    _w_param: usize,
+    w_param: usize,
     l_param: isize,
 ) -> isize {
     match message {
@@ -670,7 +671,7 @@ unsafe extern "system" fn window_proc(
                 }
                 0
             } else {
-                unsafe { DefWindowProcW(hwnd, message, 0, l_param) }
+                unsafe { DefWindowProcW(hwnd, message, w_param, l_param) }
             }
         }
         WM_GETMINMAXINFO => {
@@ -680,7 +681,7 @@ unsafe extern "system" fn window_proc(
                 info.min_track_size.y = state.px(800);
                 0
             } else {
-                unsafe { DefWindowProcW(hwnd, message, 0, l_param) }
+                unsafe { DefWindowProcW(hwnd, message, w_param, l_param) }
             }
         }
         WM_ERASEBKGND => 1,
@@ -720,9 +721,9 @@ unsafe extern "system" fn window_proc(
                     SetWindowLongPtrW(hwnd, GWLP_USERDATA, 0);
                 }
             }
-            unsafe { DefWindowProcW(hwnd, message, 0, l_param) }
+            unsafe { DefWindowProcW(hwnd, message, w_param, l_param) }
         }
-        _ => unsafe { DefWindowProcW(hwnd, message, 0, l_param) },
+        _ => unsafe { DefWindowProcW(hwnd, message, w_param, l_param) },
     }
 }
 

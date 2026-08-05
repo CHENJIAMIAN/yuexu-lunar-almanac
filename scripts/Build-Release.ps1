@@ -19,7 +19,9 @@ Push-Location $ProjectRoot
 try {
     $env:YUEXU_VERSION = $Version
     cargo test --locked
+    if ($LASTEXITCODE -ne 0) { throw "cargo test 失败，退出码：$LASTEXITCODE" }
     cargo build --release --locked --bin LunarCalendar
+    if ($LASTEXITCODE -ne 0) { throw "cargo build 失败，退出码：$LASTEXITCODE" }
 } finally {
     Remove-Item Env:YUEXU_VERSION -ErrorAction SilentlyContinue
     Pop-Location
