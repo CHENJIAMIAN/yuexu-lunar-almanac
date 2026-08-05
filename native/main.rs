@@ -11,7 +11,7 @@ use std::{
 };
 
 use anyhow::{Context, Result, bail};
-use calendar::{CustomTheme, Theme};
+use calendar::{CustomTheme, LayoutSettings, Theme};
 use chrono::{Datelike, Local, NaiveDate};
 use serde::{Deserialize, Serialize};
 
@@ -50,6 +50,8 @@ struct Settings {
         skip_serializing_if = "Option::is_none"
     )]
     custom_theme: Option<CustomTheme>,
+    #[serde(default)]
+    layout: LayoutSettings,
 }
 
 fn main() {
@@ -75,12 +77,14 @@ fn run() -> Result<()> {
         export_theme(path, &theme, options.quiet)?;
         return Ok(());
     }
+    let settings = load_settings()?;
     if options.preview {
         return ui::open_settings(
             options.year,
             theme,
             options.today,
-            load_settings()?.custom_theme,
+            settings.custom_theme,
+            settings.layout,
         );
     }
 
@@ -91,6 +95,7 @@ fn run() -> Result<()> {
             year: options.year,
             theme,
             today: options.today,
+            layout: settings.layout,
             output: options.output,
             set_wallpaper: options.set_wallpaper,
             quiet: options.quiet,
@@ -313,6 +318,7 @@ fn save_selected_theme(theme: &Theme, previous: &Settings) -> Result<()> {
             .custom_theme()
             .cloned()
             .or_else(|| previous.custom_theme.clone()),
+        layout: previous.layout,
     })
 }
 
@@ -322,6 +328,7 @@ struct RenderOptions {
     year: i32,
     theme: Theme,
     today: NaiveDate,
+    layout: LayoutSettings,
     output: Option<PathBuf>,
     set_wallpaper: bool,
     quiet: bool,
@@ -342,12 +349,13 @@ fn render_wallpaper(options: RenderOptions) -> Result<()> {
     let parent = output.parent().context("壁纸输出路径没有父目录")?;
     fs::create_dir_all(parent).context("创建壁纸输出目录失败")?;
 
-    let svg = calendar::wallpaper_svg(
+    let svg = calendar::wallpaper_svg_with_layout(
         options.width,
         options.height,
         options.year,
         &options.theme,
         options.today,
+        options.layout,
     );
     rasterize_svg(&svg, options.width, options.height, &output)?;
     let metadata = fs::metadata(&output).context("读取生成的壁纸失败")?;
@@ -366,9 +374,17 @@ fn render_wallpaper(options: RenderOptions) -> Result<()> {
     Ok(())
 }
 
-pub(crate) fn apply_selected_theme(theme: &Theme) -> Result<()> {
+pub(crate) fn apply_selected_theme(theme: &Theme, layout: LayoutSettings) -> Result<()> {
     let settings = load_settings()?;
-    save_selected_theme(theme, &settings)?;
+    let layout = layout.normalized();
+    save_settings(&Settings {
+        theme: theme.as_str().to_owned(),
+        custom_theme: theme
+            .custom_theme()
+            .cloned()
+            .or_else(|| settings.custom_theme.clone()),
+        layout,
+    })?;
     let now = Local::now().date_naive();
     let (width, height) = desktop_resolution();
     render_wallpaper(RenderOptions {
@@ -377,6 +393,7 @@ pub(crate) fn apply_selected_theme(theme: &Theme) -> Result<()> {
         year: now.year(),
         theme: theme.clone(),
         today: now,
+        layout,
         output: None,
         set_wallpaper: true,
         quiet: true,
@@ -558,5 +575,28 @@ mod tests {
             sanitize_desktop_resolution(0, 0),
             (DEFAULT_WIDTH, DEFAULT_HEIGHT)
         );
+    }
+
+    #[test]
+    fn loads_default_layout_for_existing_settings_files() {
+        let settings = serde_json::from_str::<Settings>(r#"{"theme":"dark"}"#).unwrap();
+
+        assert_eq!(settings.layout, LayoutSettings::default());
+    }
+
+    #[test]
+    fn serializes_layout_with_the_saved_preferences() {
+        let settings = Settings {
+            theme: "dark".to_owned(),
+            custom_theme: None,
+            layout: LayoutSettings {
+                left_margin: 21,
+                right_margin: 4,
+            },
+        };
+        let value = serde_json::to_value(settings).unwrap();
+
+        assert_eq!(value["layout"]["leftMargin"], 21);
+        assert_eq!(value["layout"]["rightMargin"], 4);
     }
 }

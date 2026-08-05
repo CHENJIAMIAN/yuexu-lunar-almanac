@@ -155,6 +155,50 @@ pub struct Palette {
     pub footer: String,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LayoutSettings {
+    #[serde(default = "default_left_margin")]
+    pub left_margin: u8,
+    #[serde(default = "default_right_margin")]
+    pub right_margin: u8,
+}
+
+impl Default for LayoutSettings {
+    fn default() -> Self {
+        Self {
+            left_margin: default_left_margin(),
+            right_margin: default_right_margin(),
+        }
+    }
+}
+
+impl LayoutSettings {
+    pub const MIN_LEFT_MARGIN: u8 = 8;
+    pub const MAX_LEFT_MARGIN: u8 = 32;
+    pub const MIN_RIGHT_MARGIN: u8 = 1;
+    pub const MAX_RIGHT_MARGIN: u8 = 12;
+
+    pub fn normalized(self) -> Self {
+        Self {
+            left_margin: self
+                .left_margin
+                .clamp(Self::MIN_LEFT_MARGIN, Self::MAX_LEFT_MARGIN),
+            right_margin: self
+                .right_margin
+                .clamp(Self::MIN_RIGHT_MARGIN, Self::MAX_RIGHT_MARGIN),
+        }
+    }
+}
+
+fn default_left_margin() -> u8 {
+    16
+}
+
+fn default_right_margin() -> u8 {
+    2
+}
+
 impl Palette {
     fn validate(&self) -> Result<(), String> {
         for (name, color) in [
@@ -190,19 +234,21 @@ fn validate_hex_color(name: &str, color: &str) -> Result<(), String> {
     Ok(())
 }
 
-pub fn wallpaper_svg(
+pub fn wallpaper_svg_with_layout(
     width: u32,
     height: u32,
     year: i32,
     theme: &Theme,
     today: NaiveDate,
+    layout: LayoutSettings,
 ) -> String {
     let palette = theme.palette();
+    let layout = layout.normalized();
     let width = f64::from(width);
     let height = f64::from(height);
     let unit = (width / 1920.0).min(height / 1080.0).max(0.65);
-    let gutter_width = width * 0.15625;
-    let right_padding = (width * 0.01875).max(28.0 * unit);
+    let gutter_width = width * f64::from(layout.left_margin) / 100.0;
+    let right_padding = width * f64::from(layout.right_margin) / 100.0;
     let grid_left = gutter_width;
     let grid_top = 68.0 * unit;
     let grid_bottom = height - 107.0 * unit;
@@ -519,12 +565,13 @@ mod tests {
 
     #[test]
     fn builds_all_twelve_months_without_a_hero_column() {
-        let svg = wallpaper_svg(
+        let svg = wallpaper_svg_with_layout(
             1920,
             1080,
             2026,
             &Theme::Dark,
             NaiveDate::from_ymd_opt(2026, 8, 4).unwrap(),
+            LayoutSettings::default(),
         );
         assert!(svg.contains("12"));
         assert!(svg.contains("十二月"));
@@ -558,15 +605,61 @@ mod tests {
             },
         };
         let theme = Theme::custom(custom).unwrap();
-        let svg = wallpaper_svg(
+        let svg = wallpaper_svg_with_layout(
             1920,
             1080,
             2026,
             &theme,
             NaiveDate::from_ymd_opt(2026, 8, 4).unwrap(),
+            LayoutSettings::default(),
         );
         assert!(svg.contains("#112128"));
         assert!(svg.contains("#E2835C"));
+    }
+
+    #[test]
+    fn uses_the_configured_left_and_right_margins() {
+        let narrow = wallpaper_svg_with_layout(
+            1920,
+            1080,
+            2026,
+            &Theme::Dark,
+            NaiveDate::from_ymd_opt(2026, 8, 4).unwrap(),
+            LayoutSettings {
+                left_margin: 8,
+                right_margin: 1,
+            },
+        );
+        let wide = wallpaper_svg_with_layout(
+            1920,
+            1080,
+            2026,
+            &Theme::Dark,
+            NaiveDate::from_ymd_opt(2026, 8, 4).unwrap(),
+            LayoutSettings {
+                left_margin: 32,
+                right_margin: 12,
+            },
+        );
+
+        assert!(narrow.contains(r#"<rect x="153.60""#));
+        assert!(wide.contains(r#"<rect x="614.40""#));
+        assert_ne!(narrow, wide);
+    }
+
+    #[test]
+    fn clamps_layout_margins_to_supported_ranges() {
+        assert_eq!(
+            LayoutSettings {
+                left_margin: 0,
+                right_margin: 255,
+            }
+            .normalized(),
+            LayoutSettings {
+                left_margin: LayoutSettings::MIN_LEFT_MARGIN,
+                right_margin: LayoutSettings::MAX_RIGHT_MARGIN,
+            }
+        );
     }
 
     #[test]

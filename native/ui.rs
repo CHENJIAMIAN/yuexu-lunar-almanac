@@ -13,7 +13,7 @@ use chrono::NaiveDate;
 
 use crate::{
     apply_selected_theme,
-    calendar::{CustomTheme, Palette, Theme},
+    calendar::{CustomTheme, LayoutSettings, Palette, Theme},
     export_theme, load_custom_theme, render_svg_pixels,
 };
 
@@ -28,7 +28,12 @@ const WM_PAINT: u32 = 0x000F;
 const WM_CLOSE: u32 = 0x0010;
 const WM_ERASEBKGND: u32 = 0x0014;
 const WM_GETMINMAXINFO: u32 = 0x0024;
+const WM_MOUSEMOVE: u32 = 0x0200;
+const WM_LBUTTONDOWN: u32 = 0x0201;
 const WM_LBUTTONUP: u32 = 0x0202;
+const WM_COMMAND: u32 = 0x0111;
+const WM_INITDIALOG: u32 = 0x0110;
+const WM_TIMER: u32 = 0x0113;
 const WM_NCCREATE: u32 = 0x0081;
 const WM_NCDESTROY: u32 = 0x0082;
 const GWLP_USERDATA: i32 = -21;
@@ -56,8 +61,15 @@ const OFN_PATHMUSTEXIST: u32 = 0x0000_0800;
 const OFN_FILEMUSTEXIST: u32 = 0x0000_1000;
 const CC_RGBINIT: u32 = 0x0000_0001;
 const CC_FULLOPEN: u32 = 0x0000_0002;
+const CC_ENABLEHOOK: u32 = 0x0000_0010;
 const IMAGE_ICON: u32 = 1;
 const LR_LOADFROMFILE: u32 = 0x0000_0010;
+const EN_CHANGE: usize = 0x0300;
+const COLOR_RED: i32 = 706;
+const COLOR_GREEN: i32 = 707;
+const COLOR_BLUE: i32 = 708;
+const COLOR_PREVIEW_TIMER_ID: usize = 0x59_43;
+const COLOR_PREVIEW_DELAY_MS: u32 = 60;
 
 type Handle = isize;
 type Hwnd = Handle;
@@ -207,7 +219,7 @@ struct ChooseColorW {
     custom_colors: *mut u32,
     flags: u32,
     custom_data: isize,
-    hook: *const c_void,
+    hook: Option<unsafe extern "system" fn(Hwnd, u32, usize, isize) -> isize>,
     template_name: *const u16,
 }
 
@@ -243,6 +255,7 @@ enum Action {
     Dark,
     Light,
     Custom,
+    AdjustMargin(MarginField),
     Edit(PaletteField),
     Import,
     Export,
@@ -250,6 +263,43 @@ enum Action {
     PreviousYear,
     NextYear,
     Close,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum MarginField {
+    Left,
+    Right,
+}
+
+impl MarginField {
+    const ALL: [(Self, &'static str); 2] = [(Self::Left, "左侧安全区"), (Self::Right, "右侧边距")];
+
+    fn range(self) -> (u8, u8) {
+        match self {
+            Self::Left => (
+                LayoutSettings::MIN_LEFT_MARGIN,
+                LayoutSettings::MAX_LEFT_MARGIN,
+            ),
+            Self::Right => (
+                LayoutSettings::MIN_RIGHT_MARGIN,
+                LayoutSettings::MAX_RIGHT_MARGIN,
+            ),
+        }
+    }
+
+    fn value(self, layout: LayoutSettings) -> u8 {
+        match self {
+            Self::Left => layout.left_margin,
+            Self::Right => layout.right_margin,
+        }
+    }
+
+    fn set(self, layout: &mut LayoutSettings, value: u8) {
+        match self {
+            Self::Left => layout.left_margin = value,
+            Self::Right => layout.right_margin = value,
+        }
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -326,6 +376,7 @@ struct SettingsWindow {
     today: NaiveDate,
     theme: Theme,
     saved_custom_theme: Option<CustomTheme>,
+    layout: LayoutSettings,
     preview_bitmap: Hbitmap,
     preview_width: i32,
     preview_height: i32,
@@ -337,6 +388,19 @@ struct SettingsWindow {
     status: String,
     dirty: bool,
     scale: f32,
+    active_margin: Option<MarginField>,
+}
+
+struct ColorPreviewContext {
+    state: *mut SettingsWindow,
+    owner: Hwnd,
+    field: PaletteField,
+    original_theme: Theme,
+    original_saved_custom_theme: Option<CustomTheme>,
+    original_status: String,
+    original_dirty: bool,
+    dialog: Hwnd,
+    last_color: u32,
 }
 
 impl SettingsWindow {
@@ -345,6 +409,7 @@ impl SettingsWindow {
         theme: Theme,
         today: NaiveDate,
         saved_custom_theme: Option<CustomTheme>,
+        layout: LayoutSettings,
         scale: f32,
     ) -> Self {
         Self {
@@ -352,6 +417,7 @@ impl SettingsWindow {
             today,
             theme,
             saved_custom_theme,
+            layout: layout.normalized(),
             preview_bitmap: 0,
             preview_width: PREVIEW_WIDTH as i32,
             preview_height: PREVIEW_HEIGHT as i32,
@@ -363,6 +429,7 @@ impl SettingsWindow {
             status: "选择主题或颜色，然后应用到桌面。".to_owned(),
             dirty: false,
             scale,
+            active_margin: None,
         }
     }
 
@@ -376,12 +443,13 @@ impl SettingsWindow {
     }
 
     fn refresh_preview(&mut self) -> Result<()> {
-        let svg = crate::calendar::wallpaper_svg(
+        let svg = crate::calendar::wallpaper_svg_with_layout(
             PREVIEW_WIDTH,
             PREVIEW_HEIGHT,
             self.year,
             &self.theme,
             self.today,
+            self.layout,
         );
         let pixels = render_svg_pixels(&svg, PREVIEW_WIDTH, PREVIEW_HEIGHT)?;
         let bitmap = unsafe { bitmap_from_rgba(&pixels, PREVIEW_WIDTH, PREVIEW_HEIGHT)? };
@@ -440,6 +508,7 @@ impl SettingsWindow {
                 self.status = "已进入自定义主题。".to_owned();
                 self.refresh_preview()
             }
+            Action::AdjustMargin(_) => Ok(()),
             Action::Edit(field) => self.edit_color(hwnd, field),
             Action::Import => self.import_theme(hwnd),
             Action::Export => self.export_theme(hwnd),
@@ -469,17 +538,66 @@ impl SettingsWindow {
         self.refresh_preview()
     }
 
+    fn preview_color(&mut self, field: PaletteField, color: u32) -> Result<()> {
+        *field.color_mut(&mut self.ensure_custom().palette) = hex_from_colorref(color);
+        self.dirty = true;
+        self.status = "配色预览中，尚未应用到桌面。".to_owned();
+        self.refresh_preview()
+    }
+
+    fn set_margin_from_position(
+        &mut self,
+        field: MarginField,
+        row: Rect,
+        pointer_x: i32,
+    ) -> Result<()> {
+        let value = margin_value_from_position(field, row, pointer_x, self.scale);
+        if field.value(self.layout) == value {
+            return Ok(());
+        }
+        field.set(&mut self.layout, value);
+        self.layout = self.layout.normalized();
+        self.dirty = true;
+        self.status = "版式边距预览中，尚未应用到桌面。".to_owned();
+        self.refresh_preview()
+    }
+
+    fn restore_color_preview(&mut self, context: &ColorPreviewContext) -> Result<()> {
+        self.theme = context.original_theme.clone();
+        self.saved_custom_theme = context.original_saved_custom_theme.clone();
+        self.status = context.original_status.clone();
+        self.dirty = context.original_dirty;
+        self.refresh_preview()
+    }
+
     fn edit_color(&mut self, hwnd: Hwnd, field: PaletteField) -> Result<()> {
         let palette = self.theme.exportable().palette;
         let initial = colorref_from_hex(field.color(&palette));
-        let Some(color) = choose_color(hwnd, initial, &mut self.custom_colors) else {
-            return Ok(());
+        let state = self as *mut SettingsWindow;
+        let mut context = ColorPreviewContext {
+            state,
+            owner: hwnd,
+            field,
+            original_theme: self.theme.clone(),
+            original_saved_custom_theme: self.saved_custom_theme.clone(),
+            original_status: self.status.clone(),
+            original_dirty: self.dirty,
+            dialog: 0,
+            last_color: initial,
         };
-        *field.color_mut(&mut self.ensure_custom().palette) = hex_from_colorref(color);
-        self.remember_custom_theme();
-        self.refresh_preview()?;
-        self.apply()?;
-        self.status = "配色已实时应用到桌面；后续自动更新会沿用此主题。".to_owned();
+        let custom_colors = self.custom_colors.as_mut_ptr();
+        let selected = choose_color(hwnd, initial, custom_colors, &mut context);
+        if let Some(color) = selected {
+            if color == initial {
+                self.restore_color_preview(&context)?;
+            } else {
+                self.preview_color(field, color)?;
+                self.remember_custom_theme();
+                self.status = "配色预览已更新，尚未应用到桌面。".to_owned();
+            }
+        } else {
+            self.restore_color_preview(&context)?;
+        }
         Ok(())
     }
 
@@ -504,7 +622,7 @@ impl SettingsWindow {
     }
 
     fn apply(&mut self) -> Result<()> {
-        apply_selected_theme(&self.theme)?;
+        apply_selected_theme(&self.theme, self.layout)?;
         self.dirty = false;
         self.status = "已应用到桌面；后续自动更新会沿用此主题。".to_owned();
         Ok(())
@@ -561,6 +679,7 @@ pub(crate) fn open_settings(
     theme: Theme,
     today: NaiveDate,
     saved_custom_theme: Option<CustomTheme>,
+    layout: LayoutSettings,
 ) -> Result<()> {
     if !(1900..=2100).contains(&year) {
         bail!("日历年份仅支持 1900-2100");
@@ -601,6 +720,7 @@ pub(crate) fn open_settings(
         theme,
         today,
         saved_custom_theme,
+        layout,
         scale,
     ));
     let state_ptr = Box::into_raw(state);
@@ -685,17 +805,59 @@ unsafe extern "system" fn window_proc(
             }
         }
         WM_ERASEBKGND => 1,
+        WM_LBUTTONDOWN => {
+            if let Some(state) = unsafe { state_mut(hwnd) } {
+                let (x, y) = mouse_position(l_param);
+                if let Some((field, row)) = margin_target_at(&state.hits, x, y) {
+                    state.active_margin = Some(field);
+                    if let Err(error) = state.set_margin_from_position(field, row, x) {
+                        state.status = format!("预览生成失败：{error:#}");
+                    }
+                    unsafe {
+                        SetCapture(hwnd);
+                        InvalidateRect(hwnd, null(), 0);
+                    }
+                }
+            }
+            0
+        }
+        WM_MOUSEMOVE => {
+            if let Some(state) = unsafe { state_mut(hwnd) }
+                && let Some(field) = state.active_margin
+            {
+                let (x, _) = mouse_position(l_param);
+                if let Some(row) = margin_row(&state.hits, field) {
+                    if let Err(error) = state.set_margin_from_position(field, row, x) {
+                        state.status = format!("预览生成失败：{error:#}");
+                    }
+                    unsafe {
+                        InvalidateRect(hwnd, null(), 0);
+                    }
+                }
+            }
+            0
+        }
         WM_LBUTTONUP => {
             if let Some(state) = unsafe { state_mut(hwnd) } {
-                let x = (l_param as u32 & 0xFFFF) as i16 as i32;
-                let y = ((l_param as u32 >> 16) & 0xFFFF) as i16 as i32;
-                if let Some(target) = state
+                let (x, y) = mouse_position(l_param);
+                if let Some(field) = state.active_margin.take() {
+                    if let Some(row) = margin_row(&state.hits, field)
+                        && let Err(error) = state.set_margin_from_position(field, row, x)
+                    {
+                        state.status = format!("预览生成失败：{error:#}");
+                    }
+                    unsafe {
+                        ReleaseCapture();
+                        InvalidateRect(hwnd, null(), 0);
+                    }
+                } else if let Some(action) = state
                     .hits
                     .iter()
                     .rev()
                     .find(|target| target.rect.contains(x, y))
+                    .map(|target| target.action)
                 {
-                    state.activate(hwnd, target.action);
+                    state.activate(hwnd, action);
                 }
             }
             0
@@ -734,6 +896,27 @@ unsafe fn state_mut(hwnd: Hwnd) -> Option<&'static mut SettingsWindow> {
     } else {
         Some(unsafe { &mut *pointer })
     }
+}
+
+fn mouse_position(l_param: isize) -> (i32, i32) {
+    (
+        (l_param as u32 & 0xFFFF) as i16 as i32,
+        ((l_param as u32 >> 16) & 0xFFFF) as i16 as i32,
+    )
+}
+
+fn margin_target_at(hits: &[HitTarget], x: i32, y: i32) -> Option<(MarginField, Rect)> {
+    hits.iter().rev().find_map(|target| match target.action {
+        Action::AdjustMargin(field) if target.rect.contains(x, y) => Some((field, target.rect)),
+        _ => None,
+    })
+}
+
+fn margin_row(hits: &[HitTarget], field: MarginField) -> Option<Rect> {
+    hits.iter().rev().find_map(|target| match target.action {
+        Action::AdjustMargin(candidate) if candidate == field => Some(target.rect),
+        _ => None,
+    })
 }
 
 unsafe fn paint_surface(hdc: Hdc, state: &mut SettingsWindow, client: Rect) {
@@ -825,6 +1008,48 @@ unsafe fn paint_surface(hdc: Hdc, state: &mut SettingsWindow, client: Rect) {
         });
     }
 
+    let mut layout_y = theme_y + s(52);
+    unsafe {
+        draw_text(
+            hdc,
+            state.font_small,
+            "版式边距",
+            Rect::new(
+                side.left + s(22),
+                layout_y,
+                side.right - s(22),
+                layout_y + s(22),
+            ),
+            rgb(157, 171, 160),
+            DT_LEFT | DT_VCENTER | DT_SINGLELINE,
+        );
+    }
+    layout_y += s(28);
+    for (field, label) in MarginField::ALL {
+        let rect = Rect::new(
+            side.left + s(22),
+            layout_y,
+            side.right - s(22),
+            layout_y + s(34),
+        );
+        unsafe {
+            draw_margin_row(
+                hdc,
+                state.font_small,
+                label,
+                rect,
+                field,
+                field.value(state.layout),
+                scale,
+            );
+        }
+        state.hits.push(HitTarget {
+            rect,
+            action: Action::AdjustMargin(field),
+        });
+        layout_y += s(40);
+    }
+
     unsafe {
         draw_text(
             hdc,
@@ -832,16 +1057,16 @@ unsafe fn paint_surface(hdc: Hdc, state: &mut SettingsWindow, client: Rect) {
             "自定义配色",
             Rect::new(
                 side.left + s(22),
-                theme_y + s(52),
+                layout_y + s(6),
                 side.right - s(22),
-                theme_y + s(74),
+                layout_y + s(28),
             ),
             rgb(157, 171, 160),
             DT_LEFT | DT_VCENTER | DT_SINGLELINE,
         );
     }
     let palette = state.theme.exportable().palette;
-    let mut color_y = theme_y + s(80);
+    let mut color_y = layout_y + s(34);
     for (field, label) in PaletteField::ALL {
         let rect = Rect::new(
             side.left + s(22),
@@ -1079,6 +1304,76 @@ unsafe fn draw_color_row(hdc: Hdc, font: Hfont, label: &str, rect: Rect, color: 
     }
 }
 
+unsafe fn draw_margin_row(
+    hdc: Hdc,
+    font: Hfont,
+    label: &str,
+    rect: Rect,
+    field: MarginField,
+    value: u8,
+    scale: f32,
+) {
+    let s = |value: i32| scale_px(value, scale);
+    let track = margin_track_rect(rect, scale);
+    let (minimum, maximum) = field.range();
+    let clamped = value.clamp(minimum, maximum);
+    let span = i32::from(maximum - minimum).max(1);
+    let offset = i32::from(clamped - minimum);
+    let handle_x = track.left + (track.width().max(1) - 1) * offset / span;
+    let handle = Rect::new(
+        handle_x - s(4),
+        rect.top + s(9),
+        handle_x + s(5),
+        rect.bottom - s(8),
+    );
+    unsafe {
+        fill_rect(hdc, rect, rgb(29, 39, 34));
+        frame_rect(hdc, rect, rgb(63, 78, 69));
+        draw_text(
+            hdc,
+            font,
+            label,
+            Rect::new(rect.left + s(10), rect.top, rect.left + s(100), rect.bottom),
+            rgb(224, 230, 222),
+            DT_LEFT | DT_VCENTER | DT_SINGLELINE,
+        );
+        draw_text(
+            hdc,
+            font,
+            &format!("{clamped}%"),
+            Rect::new(rect.left + s(82), rect.top, track.left - s(6), rect.bottom),
+            rgb(157, 171, 160),
+            DT_CENTER | DT_VCENTER | DT_SINGLELINE,
+        );
+        fill_rect(hdc, track, rgb(83, 101, 89));
+        fill_rect(
+            hdc,
+            Rect::new(track.left, track.top, handle_x + 1, track.bottom),
+            rgb(223, 107, 84),
+        );
+        fill_rect(hdc, handle, rgb(241, 234, 223));
+        frame_rect(hdc, handle, rgb(223, 107, 84));
+    }
+}
+
+fn margin_track_rect(rect: Rect, scale: f32) -> Rect {
+    let s = |value: i32| scale_px(value, scale);
+    let left = rect.left + s(112);
+    let right = (rect.right - s(11)).max(left + 1);
+    let center = (rect.top + rect.bottom) / 2;
+    Rect::new(left, center - s(2).max(1), right, center + s(3).max(2))
+}
+
+fn margin_value_from_position(field: MarginField, row: Rect, pointer_x: i32, scale: f32) -> u8 {
+    let track = margin_track_rect(row, scale);
+    let span = (track.width() - 1).max(1);
+    let offset = (pointer_x - track.left).clamp(0, span);
+    let (minimum, maximum) = field.range();
+    let range = i32::from(maximum - minimum);
+    let value = i32::from(minimum) + (range * offset + span / 2) / span;
+    value as u8
+}
+
 unsafe fn fill_rect(hdc: Hdc, rect: Rect, color: u32) {
     let brush = unsafe { CreateSolidBrush(color) };
     if brush != 0 {
@@ -1197,19 +1492,108 @@ fn select_theme_file(hwnd: Hwnd, save: bool) -> Option<PathBuf> {
     Some(PathBuf::from(OsString::from_wide(&file[..length])))
 }
 
-fn choose_color(hwnd: Hwnd, initial: u32, custom_colors: &mut [u32; 16]) -> Option<u32> {
+fn choose_color(
+    hwnd: Hwnd,
+    initial: u32,
+    custom_colors: *mut u32,
+    context: &mut ColorPreviewContext,
+) -> Option<u32> {
     let mut dialog = ChooseColorW {
         size: size_of::<ChooseColorW>() as u32,
         owner: hwnd,
         instance: 0,
         result: initial,
-        custom_colors: custom_colors.as_mut_ptr(),
-        flags: CC_RGBINIT | CC_FULLOPEN,
-        custom_data: 0,
-        hook: null(),
+        custom_colors,
+        flags: CC_RGBINIT | CC_FULLOPEN | CC_ENABLEHOOK,
+        custom_data: (context as *mut ColorPreviewContext) as isize,
+        hook: Some(choose_color_hook),
         template_name: null(),
     };
-    (unsafe { ChooseColorW(&mut dialog) } != 0).then_some(dialog.result)
+    let accepted = unsafe { ChooseColorW(&mut dialog) } != 0;
+    if context.dialog != 0 {
+        unsafe {
+            KillTimer(context.dialog, COLOR_PREVIEW_TIMER_ID);
+        }
+    }
+    accepted.then_some(dialog.result)
+}
+
+unsafe extern "system" fn choose_color_hook(
+    hwnd: Hwnd,
+    message: u32,
+    w_param: usize,
+    l_param: isize,
+) -> isize {
+    match message {
+        WM_INITDIALOG => {
+            let dialog = unsafe { &*(l_param as *const ChooseColorW) };
+            let context = dialog.custom_data as *mut ColorPreviewContext;
+            if !context.is_null() {
+                unsafe {
+                    SetWindowLongPtrW(hwnd, GWLP_USERDATA, context as isize);
+                    (*context).dialog = hwnd;
+                }
+            }
+        }
+        WM_COMMAND if color_component_changed(w_param) => unsafe {
+            SetTimer(hwnd, COLOR_PREVIEW_TIMER_ID, COLOR_PREVIEW_DELAY_MS, null());
+        },
+        WM_TIMER if w_param == COLOR_PREVIEW_TIMER_ID => unsafe {
+            KillTimer(hwnd, COLOR_PREVIEW_TIMER_ID);
+            refresh_color_preview_from_dialog(hwnd);
+        },
+        WM_DESTROY | WM_NCDESTROY => unsafe {
+            KillTimer(hwnd, COLOR_PREVIEW_TIMER_ID);
+            SetWindowLongPtrW(hwnd, GWLP_USERDATA, 0);
+        },
+        _ => {}
+    }
+    0
+}
+
+fn color_component_changed(w_param: usize) -> bool {
+    let control = (w_param & 0xFFFF) as i32;
+    let notification = (w_param >> 16) & 0xFFFF;
+    notification == EN_CHANGE && matches!(control, COLOR_RED | COLOR_GREEN | COLOR_BLUE)
+}
+
+unsafe fn refresh_color_preview_from_dialog(hwnd: Hwnd) {
+    let context = unsafe { GetWindowLongPtrW(hwnd, GWLP_USERDATA) } as *mut ColorPreviewContext;
+    if context.is_null() {
+        return;
+    }
+    let Some(color) = (unsafe { color_from_dialog(hwnd) }) else {
+        return;
+    };
+    let context = unsafe { &mut *context };
+    if color == context.last_color || context.state.is_null() {
+        return;
+    }
+    context.last_color = color;
+    let state = unsafe { &mut *context.state };
+    if let Err(error) = state.preview_color(context.field, color) {
+        state.status = format!("预览生成失败：{error:#}");
+    }
+    unsafe {
+        InvalidateRect(context.owner, null(), 0);
+    }
+}
+
+unsafe fn color_from_dialog(hwnd: Hwnd) -> Option<u32> {
+    let mut converted = 0;
+    let red = unsafe { GetDlgItemInt(hwnd, COLOR_RED, &mut converted, 0) };
+    if converted == 0 || red > u32::from(u8::MAX) {
+        return None;
+    }
+    let green = unsafe { GetDlgItemInt(hwnd, COLOR_GREEN, &mut converted, 0) };
+    if converted == 0 || green > u32::from(u8::MAX) {
+        return None;
+    }
+    let blue = unsafe { GetDlgItemInt(hwnd, COLOR_BLUE, &mut converted, 0) };
+    if converted == 0 || blue > u32::from(u8::MAX) {
+        return None;
+    }
+    Some(rgb(red as u8, green as u8, blue as u8))
 }
 
 fn create_font(size: i32, weight: i32, scale: f32) -> Hfont {
@@ -1313,6 +1697,8 @@ unsafe extern "system" {
     fn ShowWindow(hwnd: Hwnd, command: i32) -> i32;
     fn UpdateWindow(hwnd: Hwnd) -> i32;
     fn DestroyWindow(hwnd: Hwnd) -> i32;
+    fn SetCapture(hwnd: Hwnd) -> Hwnd;
+    fn ReleaseCapture() -> i32;
     fn GetMessageW(message: *mut Msg, hwnd: Hwnd, minimum: u32, maximum: u32) -> i32;
     fn TranslateMessage(message: *const Msg) -> i32;
     fn DispatchMessageW(message: *const Msg) -> isize;
@@ -1325,6 +1711,9 @@ unsafe extern "system" {
     fn InvalidateRect(hwnd: Hwnd, rect: *const Rect, erase: i32) -> i32;
     fn SetWindowLongPtrW(hwnd: Hwnd, index: i32, value: isize) -> isize;
     fn GetWindowLongPtrW(hwnd: Hwnd, index: i32) -> isize;
+    fn GetDlgItemInt(hwnd: Hwnd, item: i32, translated: *mut i32, signed: i32) -> u32;
+    fn SetTimer(hwnd: Hwnd, identifier: usize, elapsed: u32, callback: *const c_void) -> usize;
+    fn KillTimer(hwnd: Hwnd, identifier: usize) -> i32;
     fn LoadCursorW(instance: Hinstance, cursor_name: *const u16) -> Handle;
     fn LoadImageW(
         instance: Hinstance,
@@ -1421,6 +1810,7 @@ mod tests {
             Theme::Dark,
             NaiveDate::from_ymd_opt(2026, 8, 5).unwrap(),
             Some(saved),
+            LayoutSettings::default(),
             1.0,
         );
 
@@ -1435,5 +1825,43 @@ mod tests {
 
         assert!(SETTINGS_WINDOW_WIDTH as f32 * scale <= 704.0);
         assert!(SETTINGS_WINDOW_HEIGHT as f32 * scale <= 480.0);
+    }
+
+    #[test]
+    fn maps_margin_pointer_positions_to_the_slider_range() {
+        let row = Rect::new(0, 0, 280, 34);
+        let track = margin_track_rect(row, 1.0);
+
+        assert_eq!(
+            margin_value_from_position(MarginField::Left, row, track.left, 1.0),
+            LayoutSettings::MIN_LEFT_MARGIN
+        );
+        assert_eq!(
+            margin_value_from_position(MarginField::Left, row, track.right, 1.0),
+            LayoutSettings::MAX_LEFT_MARGIN
+        );
+    }
+
+    #[test]
+    fn color_preview_stays_pending_until_apply() {
+        let mut state = SettingsWindow::new(
+            2026,
+            Theme::Dark,
+            NaiveDate::from_ymd_opt(2026, 8, 5).unwrap(),
+            None,
+            LayoutSettings::default(),
+            1.0,
+        );
+
+        state
+            .preview_color(PaletteField::Accent, rgb(18, 171, 205))
+            .unwrap();
+
+        assert!(matches!(&state.theme, Theme::Custom(_)));
+        assert!(state.dirty);
+        assert_eq!(state.status, "配色预览中，尚未应用到桌面。");
+        unsafe {
+            state.destroy_resources();
+        }
     }
 }
