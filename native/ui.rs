@@ -20,7 +20,7 @@ use crate::{
 const PREVIEW_WIDTH: u32 = 1280;
 const PREVIEW_HEIGHT: u32 = 720;
 const SETTINGS_WINDOW_WIDTH: i32 = 1500;
-const SETTINGS_WINDOW_HEIGHT: i32 = 930;
+const SETTINGS_WINDOW_HEIGHT: i32 = 1040;
 const WINDOW_CLASS: &str = "YueXuNativeSettingsWindow";
 
 const WM_DESTROY: u32 = 0x0002;
@@ -269,10 +269,17 @@ enum Action {
 enum MarginField {
     Left,
     Right,
+    Top,
+    Bottom,
 }
 
 impl MarginField {
-    const ALL: [(Self, &'static str); 2] = [(Self::Left, "左侧安全区"), (Self::Right, "右侧边距")];
+    const ALL: [(Self, &'static str); 4] = [
+        (Self::Left, "左侧安全区"),
+        (Self::Right, "右侧边距"),
+        (Self::Top, "上边距"),
+        (Self::Bottom, "下边距"),
+    ];
 
     fn range(self) -> (u8, u8) {
         match self {
@@ -284,6 +291,14 @@ impl MarginField {
                 LayoutSettings::MIN_RIGHT_MARGIN,
                 LayoutSettings::MAX_RIGHT_MARGIN,
             ),
+            Self::Top => (
+                LayoutSettings::MIN_TOP_MARGIN,
+                LayoutSettings::MAX_TOP_MARGIN,
+            ),
+            Self::Bottom => (
+                LayoutSettings::MIN_BOTTOM_MARGIN,
+                LayoutSettings::MAX_BOTTOM_MARGIN,
+            ),
         }
     }
 
@@ -291,6 +306,8 @@ impl MarginField {
         match self {
             Self::Left => layout.left_margin,
             Self::Right => layout.right_margin,
+            Self::Top => layout.top_margin,
+            Self::Bottom => layout.bottom_margin,
         }
     }
 
@@ -298,6 +315,8 @@ impl MarginField {
         match self {
             Self::Left => layout.left_margin = value,
             Self::Right => layout.right_margin = value,
+            Self::Top => layout.top_margin = value,
+            Self::Bottom => layout.bottom_margin = value,
         }
     }
 }
@@ -798,7 +817,7 @@ unsafe extern "system" fn window_proc(
             if let Some(state) = unsafe { state_mut(hwnd) } {
                 let info = unsafe { &mut *(l_param as *mut MinMaxInfo) };
                 info.min_track_size.x = state.px(1120);
-                info.min_track_size.y = state.px(800);
+                info.min_track_size.y = state.px(960);
                 0
             } else {
                 unsafe { DefWindowProcW(hwnd, message, w_param, l_param) }

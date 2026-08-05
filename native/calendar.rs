@@ -162,6 +162,10 @@ pub struct LayoutSettings {
     pub left_margin: u8,
     #[serde(default = "default_right_margin")]
     pub right_margin: u8,
+    #[serde(default = "default_top_margin")]
+    pub top_margin: u8,
+    #[serde(default = "default_bottom_margin")]
+    pub bottom_margin: u8,
 }
 
 impl Default for LayoutSettings {
@@ -169,6 +173,8 @@ impl Default for LayoutSettings {
         Self {
             left_margin: default_left_margin(),
             right_margin: default_right_margin(),
+            top_margin: default_top_margin(),
+            bottom_margin: default_bottom_margin(),
         }
     }
 }
@@ -178,6 +184,10 @@ impl LayoutSettings {
     pub const MAX_LEFT_MARGIN: u8 = 32;
     pub const MIN_RIGHT_MARGIN: u8 = 1;
     pub const MAX_RIGHT_MARGIN: u8 = 12;
+    pub const MIN_TOP_MARGIN: u8 = 3;
+    pub const MAX_TOP_MARGIN: u8 = 18;
+    pub const MIN_BOTTOM_MARGIN: u8 = 3;
+    pub const MAX_BOTTOM_MARGIN: u8 = 18;
 
     pub fn normalized(self) -> Self {
         Self {
@@ -187,6 +197,12 @@ impl LayoutSettings {
             right_margin: self
                 .right_margin
                 .clamp(Self::MIN_RIGHT_MARGIN, Self::MAX_RIGHT_MARGIN),
+            top_margin: self
+                .top_margin
+                .clamp(Self::MIN_TOP_MARGIN, Self::MAX_TOP_MARGIN),
+            bottom_margin: self
+                .bottom_margin
+                .clamp(Self::MIN_BOTTOM_MARGIN, Self::MAX_BOTTOM_MARGIN),
         }
     }
 }
@@ -197,6 +213,14 @@ fn default_left_margin() -> u8 {
 
 fn default_right_margin() -> u8 {
     2
+}
+
+fn default_top_margin() -> u8 {
+    6
+}
+
+fn default_bottom_margin() -> u8 {
+    10
 }
 
 impl Palette {
@@ -249,9 +273,11 @@ pub fn wallpaper_svg_with_layout(
     let unit = (width / 1920.0).min(height / 1080.0).max(0.65);
     let gutter_width = width * f64::from(layout.left_margin) / 100.0;
     let right_padding = width * f64::from(layout.right_margin) / 100.0;
+    let top_padding = height * f64::from(layout.top_margin) / 100.0;
+    let bottom_padding = height * f64::from(layout.bottom_margin) / 100.0;
     let grid_left = gutter_width;
-    let grid_top = 68.0 * unit;
-    let grid_bottom = height - 107.0 * unit;
+    let grid_top = top_padding;
+    let grid_bottom = height - bottom_padding;
     let grid_width = width - grid_left - right_padding;
     let gap = 15.0 * unit;
     let card_width = (grid_width - gap * 3.0) / 4.0;
@@ -618,7 +644,7 @@ mod tests {
     }
 
     #[test]
-    fn uses_the_configured_left_and_right_margins() {
+    fn uses_the_configured_margins() {
         let narrow = wallpaper_svg_with_layout(
             1920,
             1080,
@@ -628,6 +654,8 @@ mod tests {
             LayoutSettings {
                 left_margin: 8,
                 right_margin: 1,
+                top_margin: 4,
+                bottom_margin: 6,
             },
         );
         let wide = wallpaper_svg_with_layout(
@@ -639,11 +667,13 @@ mod tests {
             LayoutSettings {
                 left_margin: 32,
                 right_margin: 12,
+                top_margin: 16,
+                bottom_margin: 18,
             },
         );
 
-        assert!(narrow.contains(r#"<rect x="153.60""#));
-        assert!(wide.contains(r#"<rect x="614.40""#));
+        assert!(narrow.contains(r#"<rect x="153.60" y="43.20""#));
+        assert!(wide.contains(r#"<rect x="614.40" y="172.80""#));
         assert_ne!(narrow, wide);
     }
 
@@ -653,11 +683,15 @@ mod tests {
             LayoutSettings {
                 left_margin: 0,
                 right_margin: 255,
+                top_margin: 0,
+                bottom_margin: 255,
             }
             .normalized(),
             LayoutSettings {
                 left_margin: LayoutSettings::MIN_LEFT_MARGIN,
                 right_margin: LayoutSettings::MAX_RIGHT_MARGIN,
+                top_margin: LayoutSettings::MIN_TOP_MARGIN,
+                bottom_margin: LayoutSettings::MAX_BOTTOM_MARGIN,
             }
         );
     }

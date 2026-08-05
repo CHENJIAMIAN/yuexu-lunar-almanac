@@ -592,11 +592,15 @@ mod tests {
             layout: LayoutSettings {
                 left_margin: 21,
                 right_margin: 4,
+                top_margin: 7,
+                bottom_margin: 11,
             },
         };
         let value = serde_json::to_value(settings).unwrap();
 
         assert_eq!(value["layout"]["leftMargin"], 21);
         assert_eq!(value["layout"]["rightMargin"], 4);
+        assert_eq!(value["layout"]["topMargin"], 7);
+        assert_eq!(value["layout"]["bottomMargin"], 11);
     }
 }
