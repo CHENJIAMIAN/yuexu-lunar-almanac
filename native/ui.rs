@@ -13,7 +13,7 @@ use chrono::NaiveDate;
 
 use crate::{
     apply_selected_theme,
-    calendar::{CustomTheme, LayoutSettings, Palette, Theme},
+    calendar::{BuiltinTheme, CustomTheme, LayoutSettings, Palette, Theme},
     export_theme, load_custom_theme, render_svg_pixels,
 };
 
@@ -252,8 +252,7 @@ struct OpenFileNameW {
 
 #[derive(Clone, Copy)]
 enum Action {
-    Dark,
-    Light,
+    Builtin(BuiltinTheme),
     Custom,
     AdjustMargin(MarginField),
     Edit(PaletteField),
@@ -485,6 +484,10 @@ impl SettingsWindow {
         match &self.theme {
             Theme::Dark => "深色",
             Theme::Light => "浅色",
+            Theme::Moonlit => "月海",
+            Theme::Pine => "松烟",
+            Theme::Cinnabar => "朱砂",
+            Theme::Mist => "雾蓝",
             Theme::Custom(theme) => &theme.name,
         }
     }
@@ -506,7 +509,12 @@ impl SettingsWindow {
         }
         match &mut self.theme {
             Theme::Custom(theme) => theme.as_mut(),
-            Theme::Dark | Theme::Light => unreachable!(),
+            Theme::Dark
+            | Theme::Light
+            | Theme::Moonlit
+            | Theme::Pine
+            | Theme::Cinnabar
+            | Theme::Mist => unreachable!(),
         }
     }
 
@@ -518,8 +526,7 @@ impl SettingsWindow {
 
     fn activate(&mut self, hwnd: Hwnd, action: Action) {
         let result = match action {
-            Action::Dark => self.select_theme(Theme::Dark),
-            Action::Light => self.select_theme(Theme::Light),
+            Action::Builtin(preset) => self.select_theme(Theme::from_builtin(preset)),
             Action::Custom => {
                 self.ensure_custom();
                 self.remember_custom_theme();
@@ -1005,29 +1012,40 @@ unsafe fn paint_surface(hdc: Hdc, state: &mut SettingsWindow, client: Rect) {
 
     let theme_y = side.top + s(132);
     let button_gap = s(7);
-    let theme_width = (side.width() - s(44) - button_gap * 2) / 3;
+    let theme_columns: usize = 4;
+    let theme_width =
+        (side.width() - s(44) - button_gap * (theme_columns as i32 - 1)) / theme_columns as i32;
     let selections = [
-        ("深色", Action::Dark, matches!(state.theme, Theme::Dark)),
-        ("浅色", Action::Light, matches!(state.theme, Theme::Light)),
-        (
-            "自定义",
-            Action::Custom,
-            matches!(state.theme, Theme::Custom(_)),
-        ),
+        (Some(BuiltinTheme::Dark), "深色"),
+        (Some(BuiltinTheme::Light), "浅色"),
+        (Some(BuiltinTheme::Moonlit), "月海"),
+        (Some(BuiltinTheme::Pine), "松烟"),
+        (Some(BuiltinTheme::Cinnabar), "朱砂"),
+        (Some(BuiltinTheme::Mist), "雾蓝"),
+        (None, "自定义"),
     ];
-    for (index, (label, action, selected)) in selections.iter().enumerate() {
-        let left = side.left + s(22) + index as i32 * (theme_width + button_gap);
-        let rect = Rect::new(left, theme_y, left + theme_width, theme_y + s(34));
+    let theme_row_step = s(34) + button_gap;
+    for (index, (preset, label)) in selections.iter().enumerate() {
+        let preset = *preset;
+        let action = preset.map(Action::Builtin).unwrap_or(Action::Custom);
+        let selected = match preset {
+            Some(preset) => state.theme.builtin() == Some(preset),
+            None => matches!(state.theme, Theme::Custom(_)),
+        };
+        let column = index % theme_columns;
+        let row = index / theme_columns;
+        let left = side.left + s(22) + column as i32 * (theme_width + button_gap);
+        let top = theme_y + row as i32 * theme_row_step;
+        let rect = Rect::new(left, top, left + theme_width, top + s(34));
         unsafe {
-            draw_button(hdc, state.font_small, label, rect, *selected, false);
+            draw_button(hdc, state.font_small, label, rect, selected, false);
         }
-        state.hits.push(HitTarget {
-            rect,
-            action: *action,
-        });
+        state.hits.push(HitTarget { rect, action });
     }
 
-    let mut layout_y = theme_y + s(52);
+    let theme_rows = selections.len().div_ceil(theme_columns);
+    let theme_bottom = theme_y + (theme_rows.saturating_sub(1) as i32) * theme_row_step + s(34);
+    let mut layout_y = theme_bottom + s(18);
     unsafe {
         draw_text(
             hdc,

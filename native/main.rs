@@ -279,7 +279,8 @@ fn resolve_theme(requested: Option<&str>, theme_file: Option<&Path>) -> Result<T
             save_selected_theme(&theme, &settings)?;
             return Ok(theme);
         }
-        let theme = Theme::parse(value).context("主题仅支持 dark、light 或 custom")?;
+        let theme = Theme::parse(value)
+            .context("主题仅支持 dark、light、moonlit、pine、cinnabar、mist 或 custom")?;
         save_selected_theme(&theme, &settings)?;
         return Ok(theme);
     }

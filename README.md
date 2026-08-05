@@ -14,7 +14,7 @@
 
 - Windows 10/11 x64
 - 全年 12 个月、农历、闰月、当天高亮
-- 深色、浅色与可导入的自定义主题，默认深色，主题会被本地记住
+- 深色、浅色、月海、松烟、朱砂、雾蓝六套内置主题与可导入的自定义主题，默认深色，主题会被本地记住
 - 登录和每天 `00:01` 自动更新；错过零点会在系统恢复后补跑
 - 默认按当前主屏的物理分辨率生成壁纸，避免不必要的 4K 渲染、缩放和裁切
 - 用户级安装，不要求管理员权限
@@ -34,7 +34,7 @@ Set-ExecutionPolicy -Scope Process Bypass
 .\Install-YueXu.ps1
 ```
 
-安装完成后，桌面和开始菜单会出现“月序日历”。打开它可以预览全年日历、切换深浅主题、编辑 11 项颜色、调整上下左右边距、导入/导出主题。调色和拖动边距会即时刷新预览；只有点击“应用到桌面”才会保存设置并更新桌面。升级安装默认保留已有主题，首次安装回落到深色。
+安装完成后，桌面和开始菜单会出现“月序日历”。打开它可以预览全年日历、切换六套内置主题、编辑 11 项颜色、调整上下左右边距、导入/导出主题。调色和拖动边距会即时刷新预览；只有点击“应用到桌面”才会保存设置并更新桌面。升级安装默认保留已有主题，首次安装回落到深色。
 
 ## 命令行
 
@@ -44,6 +44,9 @@ Start-Process -FilePath .\LunarCalendar.exe -ArgumentList @('--update', '--quiet
 
 # 切换并记住浅色主题
 Start-Process -FilePath .\LunarCalendar.exe -ArgumentList @('--update', '--theme', 'light') -Wait
+
+# 切换并记住月海主题
+Start-Process -FilePath .\LunarCalendar.exe -ArgumentList @('--update', '--theme', 'moonlit') -Wait
 
 # 导出当前主题作为 JSON 模板，编辑后导入并应用
 Start-Process -FilePath .\LunarCalendar.exe -ArgumentList @('--export-theme', '.\my-theme.json') -Wait

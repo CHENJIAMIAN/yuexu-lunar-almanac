@@ -43,15 +43,76 @@ const SERIF_FONT: &str = "SimSun, Microsoft YaHei, serif";
 pub enum Theme {
     Dark,
     Light,
+    Moonlit,
+    Pine,
+    Cinnabar,
+    Mist,
     Custom(Box<CustomTheme>),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BuiltinTheme {
+    Dark,
+    Light,
+    Moonlit,
+    Pine,
+    Cinnabar,
+    Mist,
+}
+
+impl BuiltinTheme {
+    pub const ALL: [(Self, &'static str); 6] = [
+        (Self::Dark, "深色"),
+        (Self::Light, "浅色"),
+        (Self::Moonlit, "月海"),
+        (Self::Pine, "松烟"),
+        (Self::Cinnabar, "朱砂"),
+        (Self::Mist, "雾蓝"),
+    ];
+
+    pub fn id(self) -> &'static str {
+        match self {
+            Self::Dark => "dark",
+            Self::Light => "light",
+            Self::Moonlit => "moonlit",
+            Self::Pine => "pine",
+            Self::Cinnabar => "cinnabar",
+            Self::Mist => "mist",
+        }
+    }
+
+    pub fn theme(self) -> Theme {
+        match self {
+            Self::Dark => Theme::Dark,
+            Self::Light => Theme::Light,
+            Self::Moonlit => Theme::Moonlit,
+            Self::Pine => Theme::Pine,
+            Self::Cinnabar => Theme::Cinnabar,
+            Self::Mist => Theme::Mist,
+        }
+    }
 }
 
 impl Theme {
     pub fn parse(value: &str) -> Option<Self> {
-        match value {
-            "dark" => Some(Self::Dark),
-            "light" => Some(Self::Light),
-            _ => None,
+        BuiltinTheme::ALL
+            .into_iter()
+            .find_map(|(preset, _)| (preset.id() == value).then(|| preset.theme()))
+    }
+
+    pub fn from_builtin(preset: BuiltinTheme) -> Self {
+        preset.theme()
+    }
+
+    pub fn builtin(&self) -> Option<BuiltinTheme> {
+        match self {
+            Self::Dark => Some(BuiltinTheme::Dark),
+            Self::Light => Some(BuiltinTheme::Light),
+            Self::Moonlit => Some(BuiltinTheme::Moonlit),
+            Self::Pine => Some(BuiltinTheme::Pine),
+            Self::Cinnabar => Some(BuiltinTheme::Cinnabar),
+            Self::Mist => Some(BuiltinTheme::Mist),
+            Self::Custom(_) => None,
         }
     }
 
@@ -64,6 +125,10 @@ impl Theme {
         match self {
             Self::Dark => "dark",
             Self::Light => "light",
+            Self::Moonlit => "moonlit",
+            Self::Pine => "pine",
+            Self::Cinnabar => "cinnabar",
+            Self::Mist => "mist",
             Self::Custom(_) => "custom",
         }
     }
@@ -71,7 +136,9 @@ impl Theme {
     pub fn custom_theme(&self) -> Option<&CustomTheme> {
         match self {
             Self::Custom(theme) => Some(theme.as_ref()),
-            Self::Dark | Self::Light => None,
+            Self::Dark | Self::Light | Self::Moonlit | Self::Pine | Self::Cinnabar | Self::Mist => {
+                None
+            }
         }
     }
 
@@ -83,6 +150,22 @@ impl Theme {
             },
             Self::Light => CustomTheme {
                 name: "浅色基础".to_owned(),
+                palette: self.palette(),
+            },
+            Self::Moonlit => CustomTheme {
+                name: "月海".to_owned(),
+                palette: self.palette(),
+            },
+            Self::Pine => CustomTheme {
+                name: "松烟".to_owned(),
+                palette: self.palette(),
+            },
+            Self::Cinnabar => CustomTheme {
+                name: "朱砂".to_owned(),
+                palette: self.palette(),
+            },
+            Self::Mist => CustomTheme {
+                name: "雾蓝".to_owned(),
                 palette: self.palette(),
             },
             Self::Custom(theme) => theme.as_ref().clone(),
@@ -116,6 +199,58 @@ impl Theme {
                 accent_soft: "#8E3D30".to_owned(),
                 line: "#CFC6B8".to_owned(),
                 footer: "#707870".to_owned(),
+            },
+            Self::Moonlit => Palette {
+                paper: "#172127".to_owned(),
+                gutter: "#202A2D".to_owned(),
+                card: "#1C2B30".to_owned(),
+                current_card: "#29434A".to_owned(),
+                ink: "#EAF1ED".to_owned(),
+                soft: "#A8BCBA".to_owned(),
+                muted: "#74898A".to_owned(),
+                accent: "#E0A05A".to_owned(),
+                accent_soft: "#C8A279".to_owned(),
+                line: "#536B6E".to_owned(),
+                footer: "#92A4A3".to_owned(),
+            },
+            Self::Pine => Palette {
+                paper: "#18211C".to_owned(),
+                gutter: "#243029".to_owned(),
+                card: "#223027".to_owned(),
+                current_card: "#2D4133".to_owned(),
+                ink: "#F0EBDD".to_owned(),
+                soft: "#AAB6A4".to_owned(),
+                muted: "#7E8D7C".to_owned(),
+                accent: "#D98A61".to_owned(),
+                accent_soft: "#B9C493".to_owned(),
+                line: "#566858".to_owned(),
+                footer: "#97A398".to_owned(),
+            },
+            Self::Cinnabar => Palette {
+                paper: "#3A2723".to_owned(),
+                gutter: "#4A2F29".to_owned(),
+                card: "#4A302A".to_owned(),
+                current_card: "#5E3930".to_owned(),
+                ink: "#F8EADD".to_owned(),
+                soft: "#D7B7A4".to_owned(),
+                muted: "#AE887A".to_owned(),
+                accent: "#E58B68".to_owned(),
+                accent_soft: "#EAB19C".to_owned(),
+                line: "#7C5148".to_owned(),
+                footer: "#C5A08F".to_owned(),
+            },
+            Self::Mist => Palette {
+                paper: "#E7ECEF".to_owned(),
+                gutter: "#D9E1E5".to_owned(),
+                card: "#F5F7F6".to_owned(),
+                current_card: "#FFF6E7".to_owned(),
+                ink: "#29363B".to_owned(),
+                soft: "#66777D".to_owned(),
+                muted: "#87979D".to_owned(),
+                accent: "#C76B4F".to_owned(),
+                accent_soft: "#6D8791".to_owned(),
+                line: "#B7C4C9".to_owned(),
+                footer: "#738187".to_owned(),
             },
             Self::Custom(theme) => theme.palette.clone(),
         }
@@ -609,7 +744,21 @@ mod tests {
     fn accepts_only_supported_themes() {
         assert_eq!(Theme::parse("dark"), Some(Theme::Dark));
         assert_eq!(Theme::parse("light"), Some(Theme::Light));
+        assert_eq!(Theme::parse("moonlit"), Some(Theme::Moonlit));
+        assert_eq!(Theme::parse("pine"), Some(Theme::Pine));
+        assert_eq!(Theme::parse("cinnabar"), Some(Theme::Cinnabar));
+        assert_eq!(Theme::parse("mist"), Some(Theme::Mist));
         assert_eq!(Theme::parse("forest"), None);
+    }
+
+    #[test]
+    fn round_trips_all_builtin_theme_ids() {
+        for (preset, _) in BuiltinTheme::ALL {
+            assert_eq!(
+                Theme::parse(preset.id()).and_then(|theme| theme.builtin()),
+                Some(preset)
+            );
+        }
     }
 
     #[test]
