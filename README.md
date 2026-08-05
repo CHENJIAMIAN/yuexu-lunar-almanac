@@ -1,5 +1,12 @@
 # 月序 / Lunar Almanac
 
+<!-- codex-github-rules:bilingual-summary -->
+> **中文简介**：每天自动更新、低资源占用的 Windows 全年农历桌面日历
+
+> **English summary**: A low-resource Windows desktop lunar calendar for the full year that updates daily
+
+---
+
 <p align="center">
   <img src="assets/yuexu-icon.png" width="96" alt="月序图标">
 </p>
