@@ -1,3 +1,5 @@
+[English](./README.en.md)
+
 # 月序 / Lunar Almanac
 
 <!-- codex-github-rules:bilingual-summary -->
