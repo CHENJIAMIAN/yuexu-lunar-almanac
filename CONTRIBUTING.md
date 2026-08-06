@@ -1,5 +1,7 @@
 # 贡献指南
 
+> [English](CONTRIBUTING.en.md)
+
 欢迎提交 Issue、设计建议和 Pull Request。
 
 ## 本地验证
